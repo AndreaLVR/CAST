@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Olivari"
+  given-names: "Andrea"
+title: "GTF v29: Grammar-Agnostic Structural Deduplication"
+version: 0.1.0
+date-released: 2025-12-24
+url: "https://github.com/AndreaLVR/gtf-v29"
+preferred-citation:
+  type: generic
+  authors:
+  - family-names: "Olivari"
+    given-names: "Andrea"
+  title: "GTF v29: A High-Performance Pre-processing Algorithm for Log-Structured Data Compression"
+  year: 2025
