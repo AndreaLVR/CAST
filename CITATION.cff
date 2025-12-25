@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Olivari"
+  given-names: "Andrea"
+title: "CAST: Columnar Agnostic Structural Transformation"
+version: 0.1.0
+date-released: 2025-12-24
+url: "https://github.com/AndreaLVR/CAST"
+abstract: "An agnostic algorithm that transcends standard compression limits by neutralizing structural entropy and re-engineering layouts for superior ratios and speed on structured data."
+preferred-citation:
+  type: generic
+  authors:
+  - family-names: "Olivari"
+    given-names: "Andrea"
+  title: "CAST: A High-Performance Structural Restructuring Algorithm for Optimized Data Compression"
+  year: 2025
