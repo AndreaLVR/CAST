@@ -1,6 +1,6 @@
 # CAST: Columnar Agnostic Structural Transformation
 
-> **An agnostic algorithm that transcends standard compression limits by neutralizing structural entropy and re-engineering data layout for superior compression ratios and speed on structured data.**
+> **An agnostic algorithm that transcends standard compression limits by reducing structural entropy and re-engineering data layout for superior compression ratios and speed on structured data.**
 
 ![Status](https://img.shields.io/badge/Status-Proof_of_Concept-orange)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?logo=python&logoColor=white)
