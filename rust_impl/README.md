@@ -1,160 +1,59 @@
-# CAST: Columnar Agnostic Structural Transformation (Rust Port)
+# CAST: Rust Implementations
 
-A high-performance Rust port of the CAST (Columnar Agnostic Structural Transformation) algorithm.
-This project implements a hybrid compression strategy (Template/Dictionary + LZMA2) offering two distinct operating modes: **Solid** (Single thread, Maximum Compression) and **Multithread** (Maximum Speed).
+> ⚠️ **Disclaimer: Proof of Concept & Performance Focus**
+>
+> Please note that both implementations provided here are intended as **Proof of Concepts (PoC)**. Neither version is designed for critical production environments.
+>
+> **💡 Key Performance Metric:** Regardless of the implementation chosen (7z or Native), the critical metric to observe is the **Time-to-Compression-Ratio balance**.
+> CAST aims for a unique "sweet spot": it often achieves **LZMA-like ratios in significantly less time**, or outperforms faster algorithms (like Zstd) in ratio while maintaining acceptable performance.
+>
+> **The goal is to demonstrate a superior trade-off compared to standard algorithms, rather than just winning on a single metric.**
 
-It also includes a comprehensive **Benchmark Suite** to compare performance against industry standards (LZMA2, Brotli, Zstd).
+This directory contains the high-performance Rust ports of the CAST (Columnar Agnostic Structural Transformation) algorithm.
 
-## 📂 Project Structure
+To serve different deployment needs, the implementation is split into two distinct variants. Please choose the one that best fits your environment.
 
-* **`src/lib.rs`**: Library entry point.
-* **`src/cast.rs`**: Core logic (CAST/GTF Algorithm).
-* **`src/main.rs`**: CLI Entry point (Compress/Decompress/Verify).
-* **`src/bin/run_benchmarks.rs`**: Advanced Benchmarking Suite.
+---
 
-## 🛠️ Prerequisites
+## 📂 Available Variants
 
-### Windows (Static Setup)
-To build this project on Windows, you need **vcpkg** to obtain the static version of `liblzma`.
+### 1. [7z Backend Support](./7z_support) (Recommended)
+> **Path:** `./7z_support/`
 
-1.  **Download and Install vcpkg:**
-    Open PowerShell (as Administrator) and run:
-    ```powershell
-    git clone [https://github.com/microsoft/vcpkg.git](https://github.com/microsoft/vcpkg.git)
-    cd vcpkg
-    .\bootstrap-vcpkg.bat
-    ```
+This version acts as a smart wrapper around the external **7-Zip executable**.
+* **Pros:** Great compression performance (slightly worse than the native version), utilizes 7-Zip's highly optimized multi-threading, **extremely faster than the native version**.
+* **Cons:** Requires 7-Zip to be installed on the host machine and accessible via PATH or environment variable (explained in 7z_support/README.md).
+* **Best for:** Benchmarking, local heavy-duty compression, environments where installing 7z is allowed.
 
-2.  **Install static liblzma:**
-    ```powershell
-    .\vcpkg install liblzma:x64-windows-static
-    ```
+### 2. [Native Implementation](./native)
+> **Path:** `./native/`
 
-3.  **Configure Environment:**
-    Tell Cargo where vcpkg is located (replace path with yours).
+This version uses Rust crates (`xz2`, `lzma-rs`, etc.) to handle compression internally without calling external processes.
+* **Pros:** Completely self-contained binary (no external dependencies required at runtime), cleaner distribution.
+* **Cons:** Slightly better compression ratio but lower speed compared to the optimized 7z CLI; build process requires standard C build tools.
+* **Best for:** Standalone tools, distribution to end-users, environments where external binaries cannot be called.
 
-    **PowerShell:**
-    ```powershell
-    $env:VCPKG_ROOT = "C:\path\to\your\vcpkg"
-    ```
+---
 
-    **CMD (Command Prompt):**
-    ```cmd
-    set VCPKG_ROOT=C:\path\to\your\vcpkg
-    ```
+## ⚡ Quick Comparison
 
-### Linux (Ubuntu/Debian)
-Simply install the required development packages:
+| Feature | 7z Support (`./7z_support`) | Native (`./native`) |
+| :--- | :---: | :---: |
+| **Runtime Dependency** | Requires `7z` executable | None (Standalone) |
+| **Compressio Ratio** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| **Performance** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **Multi-threading** | Managed by 7z (Auto) | Managed by Rust |
+| **Build Complexity** | Very Low | Low/Medium |
+
+---
+
+## 🚀 How to Start
+
+Navigate to the folder of your choice to see specific build and usage instructions:
+
 ```bash
-sudo apt update
-sudo apt install build-essential liblzma-dev pkg-config
-```
+# For the 7z-based version
+cd 7z_support
 
----
-
-## 🚀 Build
-
-To create the optimized executable (Release mode):
-
-```powershell
-cargo build --release
-```
-
-The binary will be located at:
-* **Windows:** `target/release/CAST.exe`
-* **Linux:** `target/release/CAST`
-
-*(Note: The exact filename depends on the `name` field in your `Cargo.toml`).*
-
----
-
-## 📦 CLI Usage (User Tool)
-
-The main tool (`src/main.rs`) allows you to compress, decompress, and verify single files.
-
-### 1. Compression
-**Syntax:**
-```powershell
-cargo run --release -- -c <input_file> <output_file> [options]
-```
-
-**Options:**
-* `--multithread`: Uses all CPU cores. Faster, but slightly lower compression ratio.
-* `--chunk-size <SIZE>`: **RAM Saver.** Splits the input into chunks of the specified size (e.g., `100MB`, `1GB`, `500KB`). Critical for processing huge files larger than available RAM.
-* `-v` or `--verify`: **Security Check.** Immediately verifies the created archive after compression. Recommended for backups.
-
-**Examples:**
-```powershell
-# Standard Compression (Fastest)
-cargo run --release -- -c "data.csv" "archive.gtf"
-
-# Compression + Verification (Safest)
-cargo run --release -- -c "data.csv" "archive.gtf" -v
-
-# Huge Files (> RAM) with Chunking (e.g., 500MB chunks)
-cargo run --release -- -c "huge_dataset.csv" "archive.gtf" --chunk-size 500MB
-
-# Max Speed + Chunking + Verification
-cargo run --release -- -c "huge.csv" "archive.gtf" --multithread --chunk-size "1 GB" -v
-```
-
-### 2. Decompression
-Automatically detects the format, restores the file, and verifies CRC32 integrity. No chunk size needed (auto-detected).
-
-```powershell
-cargo run --release -- -d "archive.gtf" "restored.csv"
-```
-
-### 3. Verification (Standalone)
-Checks the integrity of an archive (CRC32 & Structure) without writing the decompressed file to disk. Useful for testing backups.
-
-```powershell
-cargo run --release -- -v "archive.gtf"
-```
-
----
-
-## 📊 Benchmark Suite
-
-The benchmarking tool (`src/bin/run_benchmarks.rs`) compares CAST against **LZMA2**, **Brotli**, and **Zstd** (all set to maximum compression settings).
-
-**Note:** The `--list` and `--compare-with` arguments are **mandatory**.
-
-### Syntax
-```powershell
-cargo run --release --bin run_benchmarks -- --list <file_list.txt> --compare-with <algos> [options]
-```
-
-### Parameters
-* `--list <path>`: Path to a text file containing the list of files to test (one path per line).
-* `--compare-with <algos>`: Comma-separated list of algorithms to test against: `lzma2`, `brotli`, `zstd`, or `all`.
-* `--multithread`: Enables multithreading for CAST, LZMA2, and Zstd tests.
-* `--chunk-size <SIZE>`: Forces a chunk-based compression for ALL algorithms (CAST and competitors) to simulate memory-constrained environments or block-based storage.
-
-### How to prepare the file list
-Create a text file (e.g., `files.txt`) with absolute or relative paths:
-```text
-C:\Data\dataset_1.json
-D:\Logs\server_dump.log
-# You can comment out lines with #
-# ..\test\ignored_file.txt
-```
-
-### Examples
-
-**1. Full Comparison (Global/Solid Mode):**
-Best for maximum compression ratio (uses all RAM).
-```powershell
-cargo run --release --bin run_benchmarks -- --list files.txt --compare-with all
-```
-
-**2. Chunked Comparison (e.g., 100MB blocks):**
-Fair comparison for block-based compression or low-memory scenarios. Resets dictionary every 100MB for all competitors.
-```powershell
-cargo run --release --bin run_benchmarks -- --list files.txt --compare-with all --chunk-size 100MB
-```
-
-**3. Multithreaded Comparison:**
-```powershell
-cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd --multithread
-```
+# For the Native version
+cd native
