@@ -19,7 +19,7 @@ The result? **Compression ratios up to 135x** and processing speeds up to **10x 
 ## ⚡ At a Glance
 
 * 🚀 **The Performance Paradox**: Despite adding a pre-processing step, CAST reduces total compression time by up to **90%** (e.g., 2.6s vs 23s on SQL dumps).
-* 📦 **Extreme Density**: Outperforms LZMA2 (Preset 9), Zstd (Level 22) AND Brotli (Level 11) by an additional **30-60%** on complex logs, CSVs, and IoT data.
+* 📦 **Extreme Density**: Outperforms LZMA2 (Preset 9 Extreme), Zstd (Level 22) AND Brotli (Level 11) by an additional **30-60%** on complex logs, CSVs, and IoT data.
 * 🧠 **Fully Agnostic**: No schema definition required. CAST automatically detects structure in SQL, CSV, XML, JSON, Log files and, in general, in any structured data files.
 * 🔒 **Lossless**: Bit-perfect reconstruction validated by CRC32 checks.
 
