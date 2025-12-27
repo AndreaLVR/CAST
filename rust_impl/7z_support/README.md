@@ -75,27 +75,27 @@ cargo run --release -- -c <input_file> <output_file> [options]
 **Examples:**
 ```powershell
 # Standard Compression (Max Performance)
-cargo run --release -- -c "data.csv" "archive.gtf"
+cargo run --release -- -c "data.csv" "archive.cast"
 
 # Compression + Verification (Safest)
-cargo run --release -- -c "data.csv" "archive.gtf" -v
+cargo run --release -- -c "data.csv" "archive.cast" -v
 
 # Huge Files (> RAM) with Chunking (e.g., 500MB chunks)
-cargo run --release -- -c "huge_dataset.csv" "archive.gtf" --chunk-size 500MB
+cargo run --release -- -c "huge_dataset.csv" "archive.cast" --chunk-size 500MB
 ```
 
 ### 2. Decompression
 Automatically detects the format, restores the file, and verifies CRC32 integrity. No chunk size needed (auto-detected).
 
 ```powershell
-cargo run --release -- -d "archive.gtf" "restored.csv"
+cargo run --release -- -d "archive.cast" "restored.csv"
 ```
 
 ### 3. Verification (Standalone)
 Checks the integrity of an archive (CRC32 & Structure) without writing the decompressed file to disk. Useful for testing backups.
 
 ```powershell
-cargo run --release -- -v "archive.gtf"
+cargo run --release -- -v "archive.cast"
 ```
 
 ---
@@ -128,7 +128,7 @@ D:\Logs\server_dump.log
 
 ### Examples
 
-**1. Full Comparison (Global/Solid Mode):**
+**1. Full Comparison (Global):**
 Best for maximum compression ratio (uses all RAM).
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with all
@@ -144,5 +144,6 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with all 
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd
 ```
+
 
 
