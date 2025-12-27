@@ -12,7 +12,7 @@
 >
 > Please note that the implementations provided here (Python & Rust) are intended as **Proof of Concepts (PoC)** to demonstrate the algorithmic efficiency of CAST. Neither version is designed for critical production environments.
 >
-> **💡 Key Performance Metric:** The critical metric to observe is the **Time-to-Compression-Ratio balance**. CAST aims for a unique "sweet spot": it often **surpasses LZMA2 compression ratios in significantly less time**, or outperforms faster algorithms (like Zstd) in ratio while maintaining acceptable performance.
+> **💡 Key Performance Metric:** The critical metric to observe is the **Time-to-Compression-Ratio balance**. CAST aims for a unique "sweet spot": it often **surpasses LZMA2 compression ratios in significantly less time**, and outperforms algorithms like Zstd in **both compression density and processing speed**.
 > **The goal is to demonstrate a superior trade-off compared to standard algorithms, rather than just winning on a single metric.**
 
 **CAST** is a high-performance pre-processing algorithm designed to bridge the gap between raw structured text and modern entropy engines (like LZMA, Zstd, Brotli).
@@ -125,11 +125,9 @@ If you use CAST in your research or production pipeline, please cite it as:
   url = {[https://github.com/AndreaLVR/CAST](https://github.com/AndreaLVR/CAST)},
   note = {An agnostic algorithm that transcends standard compression limits by neutralizing structural entropy.}
 }
-
-
+```
 
 ---
 
 ## 📄 License
-
 This project is open-source and available under the MIT License.
