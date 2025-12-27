@@ -46,8 +46,6 @@ export SEVEN_ZIP_PATH="/usr/bin/7z"
 
 ## 🚀 Build
 
-No complex libraries (like vcpkg) are required anymore. Just use Cargo:
-
 ```powershell
 cargo build --release
 ```
@@ -60,7 +58,7 @@ The binary will be located at:
 
 ## 📦 CLI Usage (User Tool)
 
-The main tool (`src/main.rs`) allows you to compress, decompress, and verify single files. CAST now automatically utilizes all available CPU cores for maximum speed.
+The main tool (`src/main.rs`) allows you to compress, decompress, and verify single files.
 
 ### 1. Compression
 **Syntax:**
@@ -143,6 +141,11 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with all 
 **3. Specific Competitor Comparison:**
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd
+```
+
+**4. Multiple Specific Competitors Comparison:**
+```powershell
+cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd, brotli
 ```
 
 
