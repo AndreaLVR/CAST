@@ -34,12 +34,13 @@ $env:SEVEN_ZIP_PATH = "C:\Program Files\7-Zip\7z.exe"
 ```powershell
 [System.Environment]::SetEnvironmentVariable("SEVEN_ZIP_PATH", "C:\Program Files\7-Zip\7z.exe", "User")
 ```
-*(Note: Restart your terminal after running this command).*
 
 **On Linux:**
 ```bash
 export SEVEN_ZIP_PATH="/usr/bin/7z"
 ```
+
+*(Note: Restart your terminal after running this command).*
 
 ---
 
@@ -143,4 +144,5 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with all 
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd
 ```
+
 
