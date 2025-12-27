@@ -89,18 +89,22 @@ The core innovation of CAST is **Structural Agnosticism**. Unlike formats like P
 This repository serves as a **scientific Proof of Concept** to demonstrate the efficacy of the CAST algorithm. It provides two distinct implementations, each with a specific goal:
 
 ### 1. 🐍 Python Implementation (The Reference)
-* **Goal:** Maximum Compression Density & Algorithmic Clarity.
-* **Method:** Uses Python's native `lzma` library with fine-tuned parameters.
-* **Pros:** Achieves the absolute best compression ratios (as seen in the benchmarks).
-* **Cons:** Slower due to Python's interpreter overhead. Ideal for understanding the logic and verifying the math.
+* **Goal:** Maximum Compression Density & Algorithmic Reference.
+* **Method:** A simplified, monolithic implementation using Python's native `lzma`. It processes the file as a single block to maximize global deduplication context.
+* **Pros:** Achieves the absolute best compression ratios (theoretical maximum) and serves as the readable baseline for the algorithm logic.
+* **Cons:** Lacks the advanced resource management (chunking) and parallelism found in the Rust port. Slower due to interpreter overhead and limited by available RAM.
 
 ### 2. 🦀 Rust Implementation (The Performance Preview)
-* **Goal:** Simulation of Production Speeds.
-* **Method:** Implements the pre-processing in high-performance Rust and offers two backends:
+* **Goal:** High-Performance, Scalability & Production Simulation.
+* **Method:** A highly optimized port designed for speed and resource management. Unlike the Python reference, this version introduces **Multithreading** (for parallel block processing) and **Stream Chunking** (to manage memory pressure).
+* **Backends:**
     * **7z Backend:** Invokes the external `7z` CLI. Fastest option, max throughput.
     * **Native Backend:** Self-contained, no external dependencies.
-* **Pros:** Extremely fast (closer to C++ production speeds). Demonstrates that CAST can run in real-time pipelines.
-* **Trade-off:** Minimal compression loss (<1%) compared to the Python version, but with a massive gain in throughput.
+* **Pros:**
+    * **Structural Efficiency:** Drastically faster on datasets requiring intensive structural manipulation and complex memory access patterns, leveraging Rust's zero-cost abstractions.
+    * **Scalability:** Includes a `--chunk-size` feature to process datasets in stream-like blocks. This guarantees a **constant low-memory footprint**, preventing OS pressure or swapping even for files that technically fit in RAM but are unwieldy to load entirely.
+    * **Parallelism:** Both backends fully support multithreading, significantly accelerating large file processing.
+* **Trade-off:** The use of multithreading and block-based processing may result in a negligible compression difference (<1%) compared to the monolithic Python reference, exchanged for massive gains in throughput and scalability.
 
 ---
 
