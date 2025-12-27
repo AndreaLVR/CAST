@@ -1,0 +1,19 @@
+[package]
+name = "cast"
+version = "0.1.0"
+edition = "2021"
+default-run = "cast"
+
+[dependencies]
+regex = "1.10"
+crc32fast = "1.3"
+rand = "0.8"
+num-format = "0.4"
+num_cpus = "1.16"
+xz2 = { version = "0.1", features = ["static"] }
+
+brotli = "3.3"
+zstd = { version = "0.13", features = ["zstdmt"] }
+
+[build-dependencies]
+vcpkg = "0.2"
