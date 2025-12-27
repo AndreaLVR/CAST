@@ -36,7 +36,7 @@ All tests were performed on the same hardware comparing **CAST** against industr
 The table shows `Final Size` (top) and `(Time to Compress)` (bottom). **Bold** indicates the best values in the row.
 Dataset names are linked to their source where available.
 
-| Dataset | Original size | CAST <br>(w/ LZMA) | LZMA <br>(Extreme) | Zstd <br>(Level 22) | Brotli <br>(Quality 11) | CAST Ratio |
+| Dataset | Original size | CAST <br>(w/ LZMA) | LZMA2 <br>(Extreme) | Zstd <br>(Level 22) | Brotli <br>(Quality 11) | CAST Ratio |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: |
 | [**Balance of Payments**](https://www.stats.govt.nz/assets/Uploads/Balance-of-payments/Balance-of-payments-and-international-investment-position-September-2025-quarter/Download-data/balance-of-payments-and-international-investment-position-september-2025-quarter.csv)<br>*(Finance CSV)* | 33.1 MB | 🏆 **244 KB**<br>**(5.5s)** | 501 KB<br>(93.9s) | 697 KB<br>(100s) | 590 KB<br>(89.8s) | **135.7x** |
 | [**Migration Stats**](https://www.stats.govt.nz/assets/Uploads/International-migration/International-migration-October-2025/Download-data/international-migration-october-2025-citizenship-by-visa-and-by-country-of-last-permanent-residence.csv)<br>*(Demographics CSV)* | 29.2 MB | 🏆 **317 KB**<br>**(6.9s)** | 945 KB<br>(48.5s) | 1.12 MB<br>(47.3s) | 1.05 MB<br>(67.6s) | **92.1x** |
