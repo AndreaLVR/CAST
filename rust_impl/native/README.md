@@ -1,6 +1,6 @@
 # CAST: Columnar Agnostic Structural Transformation (Rust Port with Native libs)
 
-A high-performance Rust port of the CAST (Columnar Agnostic Structural Transformation) algorithm.
+A Rust port of the CAST (Columnar Agnostic Structural Transformation) algorithm.
 This project implements a hybrid compression strategy (Template/Dictionary + LZMA2) offering two distinct operating modes: **Solid** (Single thread, Maximum Compression) and **Multithread** (Maximum Speed).
 
 It also includes a comprehensive **Benchmark Suite** to compare performance against industry standards (LZMA2, Brotli, Zstd).
