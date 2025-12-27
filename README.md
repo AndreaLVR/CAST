@@ -8,6 +8,13 @@
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![Platform](https://img.shields.io/badge/Platform-Cross--Platform-lightgrey)
 
+> ⚠️ **Disclaimer: Proof of Concept & Performance Focus**
+>
+> Please note that the implementations provided here (Python & Rust) are intended as **Proof of Concepts (PoC)** to demonstrate the algorithmic efficiency of CAST. Neither version is designed for critical production environments.
+>
+> **💡 Key Performance Metric:** The critical metric to observe is the **Time-to-Compression-Ratio balance**. CAST aims for a unique "sweet spot": it often **surpasses LZMA2 compression ratios in significantly less time**, or outperforms faster algorithms (like Zstd) in ratio while maintaining acceptable performance.
+> **The goal is to demonstrate a superior trade-off compared to standard algorithms, rather than just winning on a single metric.**
+
 **CAST** is a high-performance pre-processing algorithm designed to bridge the gap between raw structured text and modern entropy engines (like LZMA, Zstd, Brotli).
 
 Standard compressors are physically limited by their local "look-back" windows. CAST breaks this barrier by parsing the file structure globally, separating the **Skeleton** (syntax) from the **Variables** (data), and re-engineering the layout into continuous columnar streams.
@@ -89,21 +96,20 @@ This repository serves as a **scientific Proof of Concept** to demonstrate the e
 
 ### 2. 🦀 Rust Implementation (The Performance Preview)
 * **Goal:** Simulation of Production Speeds.
-* **Method:** Implements the pre-processing in high-performance Rust and **invokes the external `7z` CLI** for the final compression step.
+* **Method:** Implements the pre-processing in high-performance Rust and offers two backends:
+    * **7z Backend:** Invokes the external `7z` CLI. Fastest option, max throughput.
+    * **Native Backend:** Self-contained, no external dependencies.
 * **Pros:** Extremely fast (closer to C++ production speeds). Demonstrates that CAST can run in real-time pipelines.
-* **Trade-off:** Due to the use of external 7z CLI calls (vs native library integration), there is a **negligible compression loss** (<1%) compared to the Python version, but with a massive gain in throughput.
-* 
+* **Trade-off:** Minimal compression loss (<1%) compared to the Python version, but with a massive gain in throughput.
+
 ---
 
 ## 🚀 Usage
 
-```bash
-# Compress a file
-python cast.py compress --input data/big_log.log --output archive.cast
+Since this project offers multiple implementations, detailed usage instructions, dependencies, and build commands are provided in the respective directories:
 
-# Decompress (Verification)
-python cast.py decompress --input archive.cast --output restored_log.log
-```
+* **📂 [Python Implementation](./python_impl/)**: Follow the instructions in the inner README to run the reference scripts.
+* **📂 [Rust Implementation](./rust_impl/)**: Refer to the inner README to choose between the **7z Backend** or **Native** version and for compilation steps.
 
 ---
 
@@ -119,7 +125,8 @@ If you use CAST in your research or production pipeline, please cite it as:
   url = {[https://github.com/AndreaLVR/CAST](https://github.com/AndreaLVR/CAST)},
   note = {An agnostic algorithm that transcends standard compression limits by neutralizing structural entropy.}
 }
-```
+
+
 
 ---
 
