@@ -26,7 +26,7 @@ The result? **Compression ratios up to 135x** and processing speeds up to **10x 
 ## ⚡ At a Glance
 
 * 🚀 **The Performance Paradox**: Despite adding a pre-processing step, CAST reduces total compression time by up to **90%** (e.g., 2.6s vs 23s on SQL dumps).
-* 📦 **Extreme Density**: Outperforms LZMA2 (Preset 9 Extreme), Zstd (Level 22) AND Brotli (Level 11) by an additional **30-60%** on complex logs, CSVs, and IoT data.
+* 📦 **Extreme Density**: Outperforms LZMA2 (Preset 9 Extreme), Zstd (Level 22) AND Brotli (Level 11) by an additional **30-60%** on structured data files, like CSVs, server logs, JSON, SQL dumps, IoT data, and so on.
 * 🧠 **Fully Agnostic**: No schema definition required. CAST automatically detects structure in SQL, CSV, XML, JSON, Log files and, in general, in any structured data files.
 * 🔒 **Lossless**: Bit-perfect reconstruction validated by CRC32 checks.
 
@@ -34,7 +34,20 @@ The result? **Compression ratios up to 135x** and processing speeds up to **10x 
 
 ## 📊 Benchmarks & Performance Analysis
 
-To accurately evaluate CAST, we must distinguish between **Algorithmic Efficiency** (Compression Ratio) and **Implementation Throughput** (Speed).
+To provide a comprehensive evaluation, this project features **three distinct implementations**, each designed to validate a specific aspect of the algorithm:
+
+1.  **🐍 Python Reference:** Optimized purely for **Maximum Compression Ratio** (validating the mathematical model).
+2.  **🦀 Rust (Native Backend):** A standalone implementation using native Rust crates (dependency-free).
+3.  **🦀 Rust (7z Backend):** Optimized for **Maximum Throughput**, demonstrating real-world production speeds by leveraging the 7-Zip executable.
+
+> **⚠️ Important Context on Results:**
+>
+> 1.  **Python Table (Below):** Represents the theoretical maximum compression. Times include interpreter overhead.
+> 2.  **Rust Table (Further down):** Demonstrates the **production speed** and ratio retention of CAST.
+>     * It compares CAST only against **LZMA2** (both using 7z backend) to provide a clean, direct comparison of the algorithmic impact without repeating all competitors.
+>     * **Note on Native Rust:** While the Native Rust implementation supports multithreading (offering significant speedups over the single-threaded versions), it does not yet match the raw throughput of the highly optimized 7-Zip engine. Consequently, the **Rust + 7z** results are presented below to illustrate the algorithm's performance ceiling in a fully optimized production scenario.
+>
+> **For detailed usage and build instructions, please refer to the specific `README.md` in each implementation's subdirectory.**
 
 ### 1. The Reference Benchmark (Python Implementation)
 > **🎯 Goal:** Validate the maximum theoretical **Compression Ratio**.
