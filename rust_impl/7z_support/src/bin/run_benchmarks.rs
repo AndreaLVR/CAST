@@ -95,11 +95,11 @@ fn main() {
     println!("--------------------------------------------------");
     println!("Mode:               MAX PERFORMANCE (Auto-Multithreaded: {} cores)", threads);
     if let Some(cs) = chunk_size_bytes {
-        println!("Chunking:           ACTIVE ({} per block)", format_bytes(cs));
+        println!("CAST Chunking:      ACTIVE ({} per block)", format_bytes(cs));
     } else {
-        println!("Chunking:           DISABLED (Global Optimization)");
+        println!("CAST Chunking:      DISABLED (Global Optimization)");
     }
-    println!("Competitors:        {:?}", competitors);
+    println!("Competitors:        {:?} (Always Solid/Global)", competitors);
     println!("Files to test:      {}", files_to_test.len());
     println!("--------------------------------------------------\n");
 
@@ -110,17 +110,17 @@ fn main() {
         }
 
         println!("- FILE: {}", file_path);
-        let file_len = std::fs::metadata(&file_path).unwrap().len() as usize;
+        let metadata = std::fs::metadata(&file_path).unwrap();
+        let file_len = metadata.len() as usize;
         println!("  Original size: {}", format_bytes(file_len));
 
-        // --- PREVIEW SECTION START ---
+        // --- PREVIEW SECTION ---
         if let Ok(f) = File::open(&file_path) {
             println!("  Preview (First 6 lines):");
             let reader = BufReader::new(f);
             for (i, line) in reader.lines().take(6).enumerate() {
                 match line {
                     Ok(l) => {
-                        // FIX: Usiamo .chars().take(100) invece dello slicing sui byte
                         let chars: Vec<char> = l.chars().collect();
                         let display = if chars.len() > 100 {
                             chars.into_iter().take(100).collect::<String>() + "..."
@@ -136,25 +136,46 @@ fn main() {
                 }
             }
         }
-        // --- PREVIEW SECTION END ---
-
         println!("{}", "-".repeat(60));
 
-        // Vector to collect results for this file
         let mut results = Vec::new();
 
-        // --- BRANCH: CHUNKED vs SOLID ---
-
+        // =========================================================
+        // 1. CAST EXECUTION (Chunked or Solid)
+        // =========================================================
         if let Some(chunk_size) = chunk_size_bytes {
-            // === CHUNKED BENCHMARK ===
-            run_chunked_benchmark(&file_path, chunk_size, file_len, &competitors, &mut results);
+            // CAST Chunked
+            run_cast_chunked(&file_path, chunk_size, file_len, &mut results);
         } else {
-            // === SOLID (FULL RAM) BENCHMARK ===
+            // CAST Solid
             let data = match std::fs::read(&file_path) {
                 Ok(d) => d,
-                Err(e) => { eprintln!("[!]  Read Error: {}", e); continue; }
+                Err(e) => { eprintln!("[!]  Read Error (CAST): {}", e); Vec::new() }
             };
-            run_solid_benchmark(&data, &competitors, &mut results);
+            if !data.is_empty() {
+                run_cast_solid(&data, &mut results);
+            }
+        }
+
+        // =========================================================
+        // 2. COMPETITORS EXECUTION (Always Solid)
+        // =========================================================
+        // Dobbiamo caricare il file intero in RAM per i competitor se non lo abbiamo già fatto.
+        // Nota: Questo è pesante per la RAM, ma necessario per un confronto "Global".
+
+        if !competitors.is_empty() {
+             // Rileggiamo il file per sicurezza (per evitare complessità di ownership con il blocco sopra)
+             // Il sistema operativo userà la cache del disco, quindi sarà veloce.
+             let full_data = match std::fs::read(&file_path) {
+                Ok(d) => d,
+                Err(e) => { eprintln!("[!]  Read Error (Competitors): {}", e); Vec::new() }
+            };
+
+            if !full_data.is_empty() {
+                for algo in &competitors {
+                    run_competitor_solid(algo, &full_data, &mut results);
+                }
+            }
         }
 
         // --- PRINT SUMMARY AND WINNER ---
@@ -192,7 +213,7 @@ fn main() {
         }
         println!("{}", "-".repeat(70));
 
-        // Final verdict (Python style logic)
+        // Final verdict
         if let Some(cast_res) = results.iter().find(|r| r.name.contains("CAST")) {
             if winner_name.contains("CAST") {
                 if results.len() > 1 {
@@ -215,24 +236,21 @@ fn main() {
     }
 }
 
-// --- BENCHMARK LOGIC: SOLID (Classic) ---
+// --- CAST LOGIC ---
 
-fn run_solid_benchmark(data: &[u8], competitors: &[&str], results: &mut Vec<BenchmarkResult>) {
+fn run_cast_solid(data: &[u8], results: &mut Vec<BenchmarkResult>) {
     let orig_len = data.len();
-
-    // 1. CAST
-    print!("\n[*] Running CAST ...");
+    print!("\n[*] Running CAST (Global)...");
     io::stdout().flush().unwrap();
 
     let start = Instant::now();
-    // We pass true for convention (max power), although 7z handles threads internally
     let mut compressor = CASTCompressor::new(true);
     let (r, i, v, flag, _) = compressor.compress(data);
     let duration = start.elapsed().as_secs_f64();
     let size = 17 + r.len() + i.len() + v.len();
 
     print_result(duration, size, orig_len);
-    results.push(BenchmarkResult { name: "CAST".to_string(), size, time: duration });
+    results.push(BenchmarkResult { name: "CAST (Global)".to_string(), size, time: duration });
 
     // Verify
     print!("[*] Verifying integrity... ");
@@ -248,60 +266,9 @@ fn run_solid_benchmark(data: &[u8], competitors: &[&str], results: &mut Vec<Benc
         Ok(res) => if res == data { println!("[+] OK."); } else { println!("[!] FAIL (Mismatch)."); },
         Err(_) => println!("[!] CRASH."),
     }
-
-    // 2. COMPETITORS
-    for algo in competitors {
-        run_competitor_solid(algo, data, results);
-    }
 }
 
-fn run_competitor_solid(algo: &str, data: &[u8], results: &mut Vec<BenchmarkResult>) {
-    let orig_len = data.len();
-    match algo {
-        "lzma2" => {
-            let name = "LZMA2";
-            print!("\n[*]  Running {} (7z External)...", name);
-            io::stdout().flush().unwrap();
-            let start = Instant::now();
-
-            let c = compress_with_7z(data);
-
-            let duration = start.elapsed().as_secs_f64();
-            let size = c.len();
-            print_result(duration, size, orig_len);
-            results.push(BenchmarkResult { name: name.to_string(), size, time: duration });
-        },
-        "brotli" => {
-            let name = "Brotli";
-            print!("\n[*]  Running {} (Q11)...", name);
-            io::stdout().flush().unwrap();
-            let start = Instant::now();
-            let c = compress_brotli_max(data);
-            let duration = start.elapsed().as_secs_f64();
-            let size = c.len();
-            print_result(duration, size, orig_len);
-            results.push(BenchmarkResult { name: name.to_string(), size, time: duration });
-        },
-        "zstd" => {
-            let name = "Zstd";
-            print!("\n[*]  Running {} (L22)...", name);
-            io::stdout().flush().unwrap();
-            let start = Instant::now();
-            // Zstd now always uses multithread (hardcoded in helper)
-            let c = compress_zstd_max(data);
-            let duration = start.elapsed().as_secs_f64();
-            let size = c.len();
-            print_result(duration, size, orig_len);
-            results.push(BenchmarkResult { name: name.to_string(), size, time: duration });
-        },
-        _ => {}
-    }
-}
-
-// --- BENCHMARK LOGIC: CHUNKED (Streaming) ---
-
-fn run_chunked_benchmark(file_path: &str, chunk_size: usize, file_len: usize, competitors: &[&str], results: &mut Vec<BenchmarkResult>) {
-    // 1. CAST CHUNKED
+fn run_cast_chunked(file_path: &str, chunk_size: usize, file_len: usize, results: &mut Vec<BenchmarkResult>) {
     print!("\n[*] Running CAST (Chunked)...");
     io::stdout().flush().unwrap();
 
@@ -355,56 +322,51 @@ fn run_chunked_benchmark(file_path: &str, chunk_size: usize, file_len: usize, co
     else { println!("    [Integrity: FAILED]"); }
 
     results.push(BenchmarkResult { name: "CAST (Ck)".to_string(), size: total_size, time: total_time });
+}
 
-    // 2. COMPETITORS CHUNKED
-    for algo in competitors {
-        run_competitor_chunked(algo, file_path, chunk_size, file_len, results);
+// --- COMPETITORS LOGIC (ALWAYS SOLID) ---
+
+fn run_competitor_solid(algo: &str, data: &[u8], results: &mut Vec<BenchmarkResult>) {
+    let orig_len = data.len();
+    match algo {
+        "lzma2" => {
+            let name = "LZMA2";
+            print!("\n[*]  Running {} (Global/Solid)...", name);
+            io::stdout().flush().unwrap();
+            let start = Instant::now();
+            let c = compress_with_7z(data); // Usa la tua funzione helper che chiama 7z
+            let duration = start.elapsed().as_secs_f64();
+            let size = c.len();
+            print_result(duration, size, orig_len);
+            results.push(BenchmarkResult { name: name.to_string(), size, time: duration });
+        },
+        "brotli" => {
+            let name = "Brotli";
+            print!("\n[*]  Running {} (Q11 - Global)...", name);
+            io::stdout().flush().unwrap();
+            let start = Instant::now();
+            let c = compress_brotli_max(data);
+            let duration = start.elapsed().as_secs_f64();
+            let size = c.len();
+            print_result(duration, size, orig_len);
+            results.push(BenchmarkResult { name: name.to_string(), size, time: duration });
+        },
+        "zstd" => {
+            let name = "Zstd";
+            print!("\n[*]  Running {} (L22 - Global)...", name);
+            io::stdout().flush().unwrap();
+            let start = Instant::now();
+            let c = compress_zstd_max(data);
+            let duration = start.elapsed().as_secs_f64();
+            let size = c.len();
+            print_result(duration, size, orig_len);
+            results.push(BenchmarkResult { name: name.to_string(), size, time: duration });
+        },
+        _ => {}
     }
 }
 
-fn run_competitor_chunked(algo: &str, file_path: &str, chunk_size: usize, file_len: usize, results: &mut Vec<BenchmarkResult>) {
-    let mut f_in = File::open(file_path).unwrap();
-    let mut buffer = vec![0u8; chunk_size];
-    let mut total_time = 0.0;
-    let mut total_size = 0;
-
-    let algo_name = match algo {
-        "lzma2" => "LZMA2",
-        "brotli" => "Brotli",
-        "zstd" => "Zstd",
-        _ => return,
-    };
-    let display_name = format!("{} (Ck)", algo_name);
-
-    print!("\n[*]  Running {}...", display_name);
-    io::stdout().flush().unwrap();
-
-    loop {
-        let mut current_read = 0;
-        while current_read < chunk_size {
-            let n = f_in.read(&mut buffer[current_read..]).unwrap();
-            if n == 0 { break; }
-            current_read += n;
-        }
-        if current_read == 0 { break; }
-        let chunk_data = &buffer[0..current_read];
-
-        let start = Instant::now();
-        let compressed_len = match algo {
-            "lzma2" => compress_with_7z(chunk_data).len(),
-            "brotli" => compress_brotli_max(chunk_data).len(),
-            "zstd" => compress_zstd_max(chunk_data).len(),
-            _ => 0
-        };
-        total_time += start.elapsed().as_secs_f64();
-        total_size += compressed_len;
-    }
-
-    print_result(total_time, total_size, file_len);
-    results.push(BenchmarkResult { name: display_name, size: total_size, time: total_time });
-}
-
-// --- HELPERS ---
+// --- HELPERS (Invariati) ---
 
 fn print_result(seconds: f64, size: usize, orig: usize) {
     let ratio = if size > 0 { orig as f64 / size as f64 } else { 0.0 };
@@ -420,7 +382,6 @@ fn compress_brotli_max(data: &[u8]) -> Vec<u8> {
 
 fn compress_zstd_max(data: &[u8]) -> Vec<u8> {
     let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 22).unwrap();
-    // ALWAYS ENABLE MULTITHREAD
     let threads = num_cpus::get() as u32;
     let _ = encoder.multithread(threads);
     encoder.write_all(data).unwrap();
@@ -442,7 +403,6 @@ fn parse_size(input: &str) -> Option<usize> {
     }
 }
 
-// Format with commas for bytes in detailed log
 fn format_bytes(n: usize) -> String {
     let s = n.to_string();
     let mut result = String::new();
@@ -455,7 +415,6 @@ fn format_bytes(n: usize) -> String {
     format!("{} bytes", result.chars().rev().collect::<String>())
 }
 
-// Simple formatting for final summary (commas only, no "bytes" suffix)
 fn format_num_simple(n: usize) -> String {
     let s = n.to_string();
     let mut result = String::new();
