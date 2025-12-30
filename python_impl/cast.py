@@ -9,6 +9,7 @@ from typing import List, Tuple, Union, Optional
 class CASTCompressor:
     """
     Handles the compression of structured data using the CAST (Columnar Agnostic Structural Transformation) algorithm.
+    Includes Latin-1 fallback for binary-dirty CSVs.
     """
 
     def __init__(self) -> None:
@@ -80,15 +81,20 @@ class CASTCompressor:
     def compress(
             self, input_data: Union[bytes, str]
     ) -> Tuple[bytes, bytes, bytes, int, str]:
+
+        # --- 1. DECODING & LATIN-1 CHECK ---
+        is_latin1 = False
+
         if isinstance(input_data, bytes):
             if self._is_likely_binary(input_data):
-                print(" [Mode: Binary Passthrough] ", end="")
                 return self._create_passthrough(input_data, "Passthrough [Binary]")
             try:
                 text_data = input_data.decode("utf-8")
             except UnicodeDecodeError:
                 try:
+                    # Fallback critico per file come BX_Books.csv
                     text_data = input_data.decode("latin-1")
+                    is_latin1 = True
                 except:
                     return self._create_passthrough(
                         input_data, "Passthrough [DecodeFail]"
@@ -97,8 +103,8 @@ class CASTCompressor:
             text_data = input_data
 
         self._analyze_best_strategy(text_data)
-        print(f"[Strategy: {self.mode_name}] ", end="", flush=True)
 
+        # --- 2. TEMPLATE EXTRACTION ---
         lines = text_data.splitlines(keepends=True)
         num_lines = len(lines)
         unique_limit = num_lines * (0.40 if self.mode_name == "Aggressive" else 0.25)
@@ -112,7 +118,6 @@ class CASTCompressor:
                 t_id = self.template_map[skeleton]
             else:
                 if self.next_template_id > unique_limit:
-                    print(" [Fallback: Entropy Limit] ", end="")
                     return self._create_passthrough(text_data, "Passthrough [Entropy]")
 
                 t_id = self.next_template_id
@@ -127,6 +132,7 @@ class CASTCompressor:
             for i in range(limit):
                 current_columns[i].append(vars_found[i])
 
+        # --- 3. HEURISTIC & OPTIMIZATION ---
         num_templates = len(self.skeletons_list)
         decision_mode = "UNIFIED"
 
@@ -169,6 +175,7 @@ class CASTCompressor:
             self.columns_storage = new_columns_storage
             self.stream_template_ids = new_stream_template_ids
 
+        # --- 4. SERIALIZATION ---
         REG_SEP = "\x1e"
         raw_registry = REG_SEP.join(self.skeletons_list).encode("utf-8")
 
@@ -191,27 +198,24 @@ class CASTCompressor:
             )
             id_mode_flag = 0
 
-        # --- SEPARATORS & ESCAPING (COMPATIBILITY FIX) ---
-        # Updated to match Rust "Safe Separators Logic"
+        # Inject Latin-1 Flag (Bit 0x80)
+        if is_latin1:
+            id_mode_flag |= 0x80
+
+        # --- SEPARATORS ---
         if decision_mode == "SPLIT":
             ROW_SEP = b"\x00"
             COL_SEP = b"\xff\xff"
             ESCAPE_NEEDED = False
         else:
             ROW_SEP = b"\x00"
-            # FIX 1: Use 0x02 as Column Separator
-            COL_SEP = b"\x02"
+            COL_SEP = b"\x02"  # Safe unified separator
             ESCAPE_NEEDED = True
 
-            # Helper bytes for escaping
             B_ESC = b"\x01"
             B_ROW = b"\x00"
-            B_COL = b"\x02"  # The new col separator
+            B_COL = b"\x02"
 
-            # Escape Sequences:
-            # 0x01 -> 0x01 0x01
-            # 0x00 -> 0x01 0x00
-            # 0x02 -> 0x01 0x03
             SEQ_ESC = b"\x01\x01"
             SEQ_ROW = b"\x01\x00"
             SEQ_COL = b"\x01\x03"
@@ -224,12 +228,9 @@ class CASTCompressor:
                 for v in values_list:
                     v_bytes = v.encode("utf-8")
                     if ESCAPE_NEEDED:
-                        # FIX 2: Apply escaping in correct order
-                        # 1. Escape the escape char itself
+                        # Apply escaping
                         v_bytes = v_bytes.replace(B_ESC, SEQ_ESC)
-                        # 2. Escape Row Separator
                         v_bytes = v_bytes.replace(B_ROW, SEQ_ROW)
-                        # 3. Escape Column Separator (0x02)
                         v_bytes = v_bytes.replace(B_COL, SEQ_COL)
 
                     encoded_values.append(v_bytes)
@@ -238,6 +239,7 @@ class CASTCompressor:
                 vars_buffer.extend(col_blob)
                 vars_buffer.extend(COL_SEP)
 
+        # --- 5. COMPRESSION ---
         if decision_mode == "SPLIT":
             c_reg = lzma.compress(raw_registry, preset=9)
             c_ids = lzma.compress(raw_ids, preset=9)
@@ -276,6 +278,7 @@ class CASTCompressor:
 class CASTDecompressor:
     """
     Handles the decompression of CAST-encoded data streams.
+    Fully compatible with Rust Latin-1 Flag fix.
     """
 
     def decompress(
@@ -287,22 +290,23 @@ class CASTDecompressor:
             id_mode_flag: int = 0,
     ) -> bytes:
         if id_mode_flag == 255:
-            return lzma.decompress(c_vars)
+            data = lzma.decompress(c_vars)
+            if expected_crc is not None and zlib.crc32(data) != expected_crc:
+                print("CRC ERROR (Passthrough)!")
+            return data
+
+        # --- 1. FLAG PARSING ---
+        is_latin1 = (id_mode_flag & 0x80) != 0
+        real_id_flag = id_mode_flag & 0x7F  # Clean flag for logic
 
         is_unified = len(c_registry) == 0 and len(c_ids) == 0
         REG_SEP = "\x1e"
 
-        # --- CONFIGURAZIONE SEPARATORI (MATCH RUST) ---
         if is_unified:
             ROW_SEP = b"\x00"
-            # FIX 3: Use 0x02 as Column Separator
             COL_SEP = b"\x02"
             ESCAPE_NEEDED = True
 
-            # Inverse Replacements
-            # 0x01 0x03 -> 0x02
-            # 0x01 0x00 -> 0x00
-            # 0x01 0x01 -> 0x01
             SEQ_ESC = b"\x01\x01"
             SEQ_ROW = b"\x01\x00"
             SEQ_COL = b"\x01\x03"
@@ -315,6 +319,7 @@ class CASTDecompressor:
             COL_SEP = b"\xff\xff"
             ESCAPE_NEEDED = False
 
+        # --- 2. DECOMPRESSION & PARSING ---
         if is_unified:
             full_payload = lzma.decompress(c_vars)
             len_reg, len_ids = struct.unpack("<II", full_payload[:8])
@@ -322,7 +327,7 @@ class CASTDecompressor:
             reg_data_bytes = full_payload[offset: offset + len_reg]
             offset += len_reg
 
-            if id_mode_flag == 3:
+            if real_id_flag == 3:
                 ids_data_bytes = b""
             else:
                 ids_data_bytes = full_payload[offset: offset + len_ids]
@@ -332,10 +337,10 @@ class CASTDecompressor:
             reg_data = reg_data_bytes.decode("utf-8")
             skeletons = reg_data.split(REG_SEP)
 
-            if id_mode_flag == 3:
+            if real_id_flag == 3:
                 template_ids = []
             else:
-                template_ids = self._unpack_ids(ids_data_bytes, id_mode_flag)
+                template_ids = self._unpack_ids(ids_data_bytes, real_id_flag)
 
             raw_columns = vars_data_bytes.split(COL_SEP)
         else:
@@ -344,12 +349,12 @@ class CASTDecompressor:
             skeletons = reg_data.split(REG_SEP)
 
             ids_data = lzma.decompress(c_ids)
-            template_ids = self._unpack_ids(ids_data, id_mode_flag)
+            template_ids = self._unpack_ids(ids_data, real_id_flag)
 
             vars_data = lzma.decompress(c_vars)
             raw_columns = vars_data.split(COL_SEP)
 
-        if not raw_columns[-1]:
+        if raw_columns and not raw_columns[-1]:
             raw_columns.pop()
 
         columns_storage = {}
@@ -360,6 +365,7 @@ class CASTDecompressor:
             parts = [p.encode("utf-8") for p in s.split("\x00")]
             skeleton_parts_cache.append(parts)
 
+        # --- 3. COLUMN RECONSTRUCTION ---
         for t_id, skel in enumerate(skeletons):
             num_vars = skel.count("\x00")
             columns_storage[t_id] = []
@@ -370,29 +376,23 @@ class CASTDecompressor:
                     raw_vals = col_bytes.split(ROW_SEP)
 
                     if ESCAPE_NEEDED:
-                        # FIX 4: Unescape logic (Byte replacement is efficient in Python)
-                        # Order matters less for decompression if sequences are unique,
-                        # but it's good practice to map sequences back to bytes.
                         decoded_vals = []
                         for v in raw_vals:
-                            # 1. Restore Col Sep (0x01 0x03 -> 0x02)
                             v = v.replace(SEQ_COL, B_COL)
-                            # 2. Restore Row Sep (0x01 0x00 -> 0x00)
                             v = v.replace(SEQ_ROW, B_ROW)
-                            # 3. Restore Escape (0x01 0x01 -> 0x01)
                             v = v.replace(SEQ_ESC, B_ESC)
                             decoded_vals.append(v)
-
                         columns_storage[t_id].append(iter(decoded_vals))
                     else:
                         columns_storage[t_id].append(iter(raw_vals))
 
                     col_idx_counter += 1
 
+        # --- 4. STREAM RECONSTRUCTION ---
         reconstructed_fragments = []
         buf_append = reconstructed_fragments.append
 
-        if id_mode_flag == 3:
+        if real_id_flag == 3:
             parts = skeleton_parts_cache[0]
             queues = columns_storage[0]
             for vars_tuple in zip(*queues):
@@ -416,6 +416,16 @@ class CASTDecompressor:
 
         final_blob = b"".join(reconstructed_fragments)
 
+        # --- 5. LATIN-1 RESTORATION (CRITICAL FIX) ---
+        if is_latin1:
+            try:
+                # Invertiamo l'espansione UTF-8 avvenuta in fase di compressione
+                temp_str = final_blob.decode("utf-8")
+                final_blob = temp_str.encode("latin-1")
+            except Exception as e:
+                print(f"[!] Warning: Latin-1 restoration failed: {e}")
+
+        # --- 6. CRC CHECK ---
         if expected_crc is not None:
             calculated_crc = zlib.crc32(final_blob)
             if calculated_crc != expected_crc:
