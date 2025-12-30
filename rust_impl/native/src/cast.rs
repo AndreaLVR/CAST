@@ -19,6 +19,12 @@ fn decode_python_latin1(data: &[u8]) -> String {
     data.iter().map(|&b| b as char).collect()
 }
 
+// NUOVO: Funzione inversa per ripristinare i byte originali da UTF-8 "espanso"
+fn encode_back_to_latin1(utf8_data: Vec<u8>) -> Vec<u8> {
+    let s = String::from_utf8(utf8_data).expect("CRITICAL: Failed to parse UTF-8 during Latin-1 restoration");
+    s.chars().map(|c| c as u8).collect()
+}
+
 pub fn create_chaotic_log(filename: &str, num_lines: usize) {
     println!("[*] Generazione file DEMO: {}...", filename);
     let mut f = File::create(filename).unwrap();
@@ -49,8 +55,7 @@ pub fn compress_buffer_native(data: &[u8], multithread: bool) -> Vec<u8> {
 
     // Smart Switch
     let effective_multithread = if multithread && (data.len() as u32) < dict_size {
-        println!("      [!]   Auto-Switch to SINGLE THREAD: Input ({} B) < Dict ({} B)",
-            format_num(data.len()), format_num(dict_size as usize));
+        // println!("      [!]   Auto-Switch to SINGLE THREAD: Input ({} B) < Dict ({} B)", format_num(data.len()), format_num(dict_size as usize));
         false
     } else {
         multithread
@@ -63,13 +68,12 @@ pub fn compress_buffer_native(data: &[u8], multithread: bool) -> Vec<u8> {
     let mut filters = Filters::new();
     filters.lzma2(&opts);
 
-    // Allocazione Smart (Cap 128MB)
+    // Allocazione Smart
     let estimated = data.len() / 2;
     let cap_limit = dict_size as usize;
     let safe_capacity = cmp::min(estimated, cap_limit);
     let output_buffer = Vec::with_capacity(safe_capacity);
 
-    // Buffering Scrittura per velocità
     let writer = std::io::BufWriter::new(output_buffer);
 
     if !effective_multithread {
@@ -97,7 +101,7 @@ pub fn compress_buffer_native(data: &[u8], multithread: bool) -> Vec<u8> {
 pub fn decompress_buffer_native(data: &[u8]) -> Vec<u8> {
     if data.is_empty() { return Vec::new(); }
     let mut decompressor = XzDecoder::new(data);
-    let mut output = Vec::with_capacity(data.len() * 3); // Stima x3 per evitare realloc
+    let mut output = Vec::with_capacity(data.len() * 3);
     decompressor.read_to_end(&mut output).expect("Errore decompressione dati");
     output
 }
@@ -159,21 +163,30 @@ impl CASTCompressor {
              return self.create_passthrough(input_data, "Passthrough [Binary]");
         }
 
-        // 2. Decoding Logic
+        // 2. Decoding Logic (con Latin-1 Check)
         let text_data_owned;
-        let text_data = match std::str::from_utf8(input_data) {
-            Ok(s) => s,
+        let (text_data, is_latin1) = match std::str::from_utf8(input_data) {
+            Ok(s) => (s, false), // OK UTF-8
             Err(_) => {
+                // Fallback Latin-1
                 text_data_owned = decode_python_latin1(input_data);
-                &text_data_owned
+                (&text_data_owned, true) // Flagghiamo true
             }
         };
 
-        let active_regex = self.analyze_strategy(text_data);
+        // Nota: se text_data_owned viene creato, la reference &text_data_owned vive finché vive la variabile.
+        // Qui facciamo shadowing per semplificare l'uso di text_data come &str.
+        let text_slice = if is_latin1 {
+             text_data_owned.as_str()
+        } else {
+             text_data
+        };
 
-        println!("      Strategy:   {}", self.mode_name);
+        let active_regex = self.analyze_strategy(text_slice);
 
-        let lines: Vec<&str> = text_data.split_inclusive('\n').collect();
+        // println!("      Strategy:   {}", self.mode_name);
+
+        let lines: Vec<&str> = text_slice.split_inclusive('\n').collect();
         let unique_limit = (lines.len() as f64 * if self.mode_name == "Aggressive" { 0.40 } else { 0.25 }) as u32;
 
         // 3. Processing Lines
@@ -205,7 +218,7 @@ impl CASTCompressor {
                 t_id = id;
             } else {
                 if self.next_template_id > unique_limit {
-                    return self.create_passthrough(text_data.as_bytes(), "Passthrough [Entropy]");
+                    return self.create_passthrough(input_data, "Passthrough [Entropy]");
                 }
                 t_id = self.next_template_id;
                 self.template_map.insert(skeleton.clone(), t_id);
@@ -286,7 +299,8 @@ impl CASTCompressor {
         let reg_sep = "\x1E";
         let raw_registry = self.skeletons_list.join(reg_sep).into_bytes();
         let mut raw_ids = Vec::new();
-        let id_mode_flag;
+        let mut id_mode_flag; // Mutabile per flaggare
+
         if num_templates == 1 { id_mode_flag = 3; }
         else if num_templates < 256 {
             id_mode_flag = 2;
@@ -299,21 +313,20 @@ impl CASTCompressor {
             for &id in &self.stream_template_ids { raw_ids.extend_from_slice(&(id as u16).to_le_bytes()); }
         }
 
-        // --- UPDATED SAFE SEPARATORS LOGIC ---
+        // --- FIX: LATIN1 FLAG INJECTION ---
+        if is_latin1 {
+            id_mode_flag |= 0x80;
+        }
+
+        // --- SAFE SEPARATORS LOGIC ---
         let row_sep = b"\x00";
         let col_sep_split = b"\xFF\xFF";
-
-        // FIX: Usare 0x02 per le colonne e aggiungere sequenza escape
         let col_sep_unified = b"\x02";
         let esc_char = b"\x01";
 
-        // Mapping Escapes:
-        // 0x01 -> 0x01 0x01
-        // 0x00 -> 0x01 0x00
-        // 0x02 -> 0x01 0x03
         let esc_seq_esc = b"\x01\x01";
-        let esc_seq_sep = b"\x01\x00"; // Row
-        let esc_seq_col = b"\x01\x03"; // Col (0x02)
+        let esc_seq_sep = b"\x01\x00";
+        let esc_seq_col = b"\x01\x03";
 
         let mut vars_buffer = Vec::new();
         let is_unified = decision_mode == "UNIFIED";
@@ -329,7 +342,7 @@ impl CASTCompressor {
                             for &b in v_bytes {
                                 if b == esc_char[0] { vars_buffer.extend_from_slice(esc_seq_esc); }
                                 else if b == row_sep[0] { vars_buffer.extend_from_slice(esc_seq_sep); }
-                                else if b == col_sep_unified[0] { vars_buffer.extend_from_slice(esc_seq_col); } // Fix Escape 0x02
+                                else if b == col_sep_unified[0] { vars_buffer.extend_from_slice(esc_seq_col); }
                                 else { vars_buffer.push(b); }
                             }
                         } else { vars_buffer.extend_from_slice(v_bytes); }
@@ -365,12 +378,18 @@ impl CASTCompressor {
     }
 }
 
-// --- DECOMPRESSORE (Zero-Alloc / Zero-Copy Logic) ---
+// --- DECOMPRESSORE (Native) ---
 
 pub struct CASTDecompressor;
 impl CASTDecompressor {
-    pub fn decompress(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag: u8) -> Vec<u8> {
-        if id_flag == 255 { return decompress_buffer_native(c_vars); }
+    pub fn decompress(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag_raw: u8) -> Vec<u8> {
+        if id_flag_raw == 255 { return decompress_buffer_native(c_vars); }
+
+        // --- FIX: DECODE FLAG ---
+        let is_latin1 = (id_flag_raw & 0x80) != 0;
+        let id_flag = id_flag_raw & 0x7F; // Pulisce il flag
+        // -----------------------
+
         let is_unified = c_reg.is_empty() && c_ids.is_empty();
         let reg_data_bytes;
         let mut ids_data_bytes = Vec::new();
@@ -395,7 +414,8 @@ impl CASTDecompressor {
         }
 
         let reg_len = reg_data_bytes.len();
-        let reg_str = String::from_utf8(reg_data_bytes).unwrap();
+        // Usiamo expect perché se fallisce qui, il file è corrotto
+        let reg_str = String::from_utf8(reg_data_bytes).expect("Registry corrupted (not UTF-8)");
         let skeletons: Vec<&str> = reg_str.split("\x1E").collect();
 
         let mut template_ids = Vec::new();
@@ -407,7 +427,6 @@ impl CASTDecompressor {
             for ch in ids_data_bytes.chunks_exact(2) { template_ids.push(u16::from_le_bytes(ch.try_into().unwrap()) as usize); }
         }
 
-        // FIX: Match Compressor (0x02)
         let col_sep_unified = b"\x02";
         let col_sep_split = b"\xFF\xFF";
         let sep = if is_unified { col_sep_unified.as_slice() } else { col_sep_split.as_slice() };
@@ -474,9 +493,7 @@ impl CASTDecompressor {
         let skel_parts_cache: Vec<Vec<&str>> = skeletons.iter().map(|s| s.split("\x00").collect()).collect();
         let mut final_blob = Vec::with_capacity(vars_data_bytes.len() + reg_len);
 
-        // --- STEP 3: Ricostruzione (con Fix Borrow Checker) ---
-
-        // Helper Closure per unescape
+        // --- STEP 3: Ricostruzione ---
         let append_unescaped = |blob: &mut Vec<u8>, slice: &[u8]| {
             if is_unified {
                 let mut k = 0;
@@ -484,8 +501,8 @@ impl CASTDecompressor {
                     if slice[k] == 0x01 && k+1 < slice.len() {
                         let nb = slice[k+1];
                         if nb == 0x01 { blob.push(0x01); }
-                        else if nb == 0x00 { blob.push(0x00); } // Was 0x00 in data
-                        else if nb == 0x03 { blob.push(0x02); } // Was 0x02 in data
+                        else if nb == 0x00 { blob.push(0x00); }
+                        else if nb == 0x03 { blob.push(0x02); }
                         k += 2;
                     } else {
                         blob.push(slice[k]);
@@ -526,10 +543,17 @@ impl CASTDecompressor {
             }
         }
 
+        // --- STEP 4: LATIN1 RESTORATION (FIX) ---
+        let final_data = if is_latin1 {
+            encode_back_to_latin1(final_blob)
+        } else {
+            final_blob
+        };
+
         let mut h = Hasher::new();
-        h.update(&final_blob);
+        h.update(&final_data);
         let crc = h.finalize();
         if crc != expected_crc { eprintln!("CRC ERROR! Atteso: {}, Calcolato: {}", expected_crc, crc); }
-        final_blob
+        final_data
     }
 }
