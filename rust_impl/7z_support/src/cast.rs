@@ -38,7 +38,7 @@ pub fn compress_with_7z(data: &[u8]) -> Vec<u8> {
     let tmp_in = format!("temp_in_{}_{}.bin", pid, rnd);
     let tmp_out = format!("temp_out_{}_{}.xz", pid, rnd);
 
-    // Pulizia preventiva (ignoriamo errori se i file non esistono)
+    // Pulizia preventiva
     let _ = fs::remove_file(&tmp_in);
     let _ = fs::remove_file(&tmp_out);
 
@@ -53,7 +53,7 @@ pub fn compress_with_7z(data: &[u8]) -> Vec<u8> {
 
     // 2. Esecuzione 7z
     let output = Command::new(&cmd)
-        // Nota: d128m usa MOLTA RAM. Se va in OOM, lo vedremo ora.
+        // Nota: d128m usa MOLTA RAM. Se va in OOM, lo vedremo ora grazie al panic sotto.
         .args(&["a", "-txz", "-mx=9", "-mmt=on", "-m0=lzma2:d128m", "-y", "-bb0", &tmp_out, &tmp_in])
         .output();
 
@@ -61,12 +61,9 @@ pub fn compress_with_7z(data: &[u8]) -> Vec<u8> {
     match output {
         Ok(out) => {
             if !out.status.success() {
-                // Se 7z esce con codice != 0 (es. 2 = Fatal Error / OOM), STAMPA E PANICA.
                 let stderr = String::from_utf8_lossy(&out.stderr);
-                let _ = fs::remove_file(&tmp_in); // Tentativo di cleanup
+                let _ = fs::remove_file(&tmp_in);
                 let _ = fs::remove_file(&tmp_out);
-
-                // QUI STA LA DIFFERENZA: Blocchiamo tutto invece di ritornare vuoto.
                 panic!("\n[!] 7-ZIP CRASHED! Exit Code: {}\n[!] STDERR: {}\n[!] Hint: Try reducing dictionary size (-m0=lzma2:d64m) or use Chunking.", out.status, stderr);
             }
         },
@@ -85,7 +82,7 @@ pub fn compress_with_7z(data: &[u8]) -> Vec<u8> {
         }
     };
 
-    // Cleanup finale solo se tutto è andato bene
+    // Cleanup
     let _ = fs::remove_file(&tmp_in);
     let _ = fs::remove_file(&tmp_out);
 
@@ -95,7 +92,8 @@ pub fn compress_with_7z(data: &[u8]) -> Vec<u8> {
 fn decompress_with_7z(data: &[u8]) -> Vec<u8> {
     if data.is_empty() { return Vec::new(); }
     let pid = std::process::id();
-    let tmp_in = format!("temp_dec_in_{}_{}.xz", pid, rand::thread_rng().gen::<u32>());
+    let rnd = rand::thread_rng().gen::<u32>();
+    let tmp_in = format!("temp_dec_in_{}_{}.xz", pid, rnd);
 
     let _ = fs::remove_file(&tmp_in);
 
@@ -124,6 +122,16 @@ fn decompress_with_7z(data: &[u8]) -> Vec<u8> {
 // --- UTILS ---
 fn decode_python_latin1(data: &[u8]) -> String {
     data.iter().map(|&b| b as char).collect()
+}
+
+// NUOVO: Funzione inversa per ripristinare i byte originali da UTF-8 "espanso"
+fn encode_back_to_latin1(utf8_data: Vec<u8>) -> Vec<u8> {
+    // Convertiamo i byte UTF-8 in Stringa (sicuro perché l'abbiamo creata noi)
+    let s = String::from_utf8(utf8_data).expect("CRITICAL: Failed to parse UTF-8 during Latin-1 restoration");
+    // Ogni char in Rust è un Unicode scalar value.
+    // Poiché decode_python_latin1 mappa 1:1 i byte 0..255 sui codepoint 0..255,
+    // il cast `c as u8` è l'inverso esatto e senza perdita per questo sottoinsieme.
+    s.chars().map(|c| c as u8).collect()
 }
 
 // --- COMPRESSOR (CAST Logic with 7z) ---
@@ -184,13 +192,14 @@ impl CASTCompressor {
              return self.create_passthrough(input_data, "Passthrough [Binary]");
         }
 
-        // 2. Decoding Logic
+        // 2. Decoding Logic (con rilevamento Latin-1)
         let text_data_owned;
-        let text_data = match std::str::from_utf8(input_data) {
-            Ok(s) => s,
+        let (text_data, is_latin1) = match std::str::from_utf8(input_data) {
+            Ok(s) => (s, false), // È UTF-8 valido
             Err(_) => {
+                // Fallback: decodifica Latin-1 (byte-to-char mapping)
                 text_data_owned = decode_python_latin1(input_data);
-                &text_data_owned
+                (text_data_owned.as_str(), true)
             }
         };
 
@@ -228,7 +237,7 @@ impl CASTCompressor {
                 t_id = id;
             } else {
                 if self.next_template_id > unique_limit {
-                    return self.create_passthrough(text_data.as_bytes(), "Passthrough [Entropy]");
+                    return self.create_passthrough(input_data, "Passthrough [Entropy]");
                 }
                 t_id = self.next_template_id;
                 self.template_map.insert(skeleton.clone(), t_id);
@@ -309,7 +318,8 @@ impl CASTCompressor {
         let reg_sep = "\x1E";
         let raw_registry = self.skeletons_list.join(reg_sep).into_bytes();
         let mut raw_ids = Vec::new();
-        let id_mode_flag;
+        let mut id_mode_flag; // Mutabile per flaggare Latin-1
+
         if num_templates == 1 { id_mode_flag = 3; }
         else if num_templates < 256 {
             id_mode_flag = 2;
@@ -322,19 +332,18 @@ impl CASTCompressor {
             for &id in &self.stream_template_ids { raw_ids.extend_from_slice(&(id as u16).to_le_bytes()); }
         }
 
+        // --- LATIN1 FLAG INJECTION ---
+        // Se abbiamo usato il fallback Latin-1, alziamo il bit più alto (0x80)
+        if is_latin1 {
+            id_mode_flag |= 0x80;
+        }
+
         // --- SAFE SEPARATORS LOGIC ---
         let row_sep = b"\x00";
         let col_sep_split = b"\xFF\xFF";
-
-        // FIX: Use 0x02 for unified column separator to avoid collision with Escape (0x01)
         let col_sep_unified = b"\x02";
-
         let esc_char = b"\x01";
 
-        // Escape Mappings:
-        // 0x01 -> 0x01 0x01
-        // 0x00 -> 0x01 0x00 (Row Separator found in data)
-        // 0x02 -> 0x01 0x03 (Column Separator found in data)
         let esc_seq_esc = b"\x01\x01";
         let esc_seq_sep = b"\x01\x00";
         let esc_seq_col = b"\x01\x03";
@@ -353,7 +362,7 @@ impl CASTCompressor {
                             for &b in v_bytes {
                                 if b == esc_char[0] { vars_buffer.extend_from_slice(esc_seq_esc); }
                                 else if b == row_sep[0] { vars_buffer.extend_from_slice(esc_seq_sep); }
-                                else if b == col_sep_unified[0] { vars_buffer.extend_from_slice(esc_seq_col); } // Safety Fix
+                                else if b == col_sep_unified[0] { vars_buffer.extend_from_slice(esc_seq_col); }
                                 else { vars_buffer.push(b); }
                             }
                         } else { vars_buffer.extend_from_slice(v_bytes); }
@@ -393,8 +402,23 @@ impl CASTCompressor {
 
 pub struct CASTDecompressor;
 impl CASTDecompressor {
-    pub fn decompress(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag: u8) -> Vec<u8> {
-        if id_flag == 255 { return decompress_with_7z(c_vars); }
+    pub fn decompress(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag_raw: u8) -> Vec<u8> {
+        // 1. Passthrough Check
+        if id_flag_raw == 255 {
+            let data = decompress_with_7z(c_vars);
+            // Verifica CRC anche per passthrough
+            let mut h = Hasher::new();
+            h.update(&data);
+            if h.finalize() != expected_crc { eprintln!("CRC ERROR (Passthrough)!"); }
+            return data;
+        }
+
+        // 2. Decode Latin1 Flag
+        // Estraiamo il bit alto per sapere se era Latin-1
+        let is_latin1 = (id_flag_raw & 0x80) != 0;
+        // Puliamo il flag per l'uso normale
+        let id_flag = id_flag_raw & 0x7F;
+
         let is_unified = c_reg.is_empty() && c_ids.is_empty();
         let reg_data_bytes;
         let mut ids_data_bytes = Vec::new();
@@ -420,7 +444,8 @@ impl CASTDecompressor {
         }
 
         let reg_len = reg_data_bytes.len();
-        let reg_str = String::from_utf8(reg_data_bytes).unwrap();
+        // Usiamo expect perché se la registry non è UTF-8, abbiamo problemi più grossi
+        let reg_str = String::from_utf8(reg_data_bytes).expect("Registry is not valid UTF-8");
         let skeletons: Vec<&str> = reg_str.split("\x1E").collect();
 
         let mut template_ids = Vec::new();
@@ -500,7 +525,6 @@ impl CASTDecompressor {
 
         // --- STEP 3: Reconstruction ---
 
-        // FIX: La closure ora accetta `blob` come argomento mutabile invece di catturarlo
         let append_unescaped = |blob: &mut Vec<u8>, slice: &[u8]| {
             if is_unified {
                 let mut k = 0;
@@ -508,8 +532,8 @@ impl CASTDecompressor {
                     if slice[k] == 0x01 && k+1 < slice.len() {
                         let nb = slice[k+1];
                         if nb == 0x01 { blob.push(0x01); }
-                        else if nb == 0x00 { blob.push(0x00); } // Was 0x00 in data
-                        else if nb == 0x03 { blob.push(0x02); } // Was 0x02 in data
+                        else if nb == 0x00 { blob.push(0x00); }
+                        else if nb == 0x03 { blob.push(0x02); }
                         k += 2;
                     } else {
                         blob.push(slice[k]);
@@ -527,11 +551,9 @@ impl CASTDecompressor {
             let num_rows = if !queues.is_empty() { queues[0].len() } else { 0 };
             for _ in 0..num_rows {
                 for (idx, part) in parts.iter().enumerate() {
-                    // Accesso diretto a final_blob consentito qui
                     final_blob.extend_from_slice(part.as_bytes());
                     if idx < queues.len() {
                         if let Some((s, e)) = queues[idx].pop_front() {
-                            // Passiamo &mut final_blob alla funzione
                             append_unescaped(&mut final_blob, &vars_data_bytes[s..e]);
                         }
                     }
@@ -542,11 +564,9 @@ impl CASTDecompressor {
                 let parts = &skel_parts_cache[t_id];
                 let queues = &mut columns_storage[t_id];
                 for (idx, part) in parts.iter().enumerate() {
-                    // Accesso diretto a final_blob consentito qui
                     final_blob.extend_from_slice(part.as_bytes());
                     if idx < queues.len() {
                         if let Some((s, e)) = queues[idx].pop_front() {
-                             // Passiamo &mut final_blob alla funzione
                              append_unescaped(&mut final_blob, &vars_data_bytes[s..e]);
                         }
                     }
@@ -554,10 +574,19 @@ impl CASTDecompressor {
             }
         }
 
+        // --- STEP 4: LATIN1 RESTORATION (If needed) ---
+        // Se il flag era attivo, significa che il file originale non era UTF-8, ma Latin-1.
+        // Dobbiamo riconvertire i caratteri multibyte in byte singoli.
+        let final_data = if is_latin1 {
+            encode_back_to_latin1(final_blob)
+        } else {
+            final_blob
+        };
+
         let mut h = Hasher::new();
-        h.update(&final_blob);
+        h.update(&final_data);
         let crc = h.finalize();
         if crc != expected_crc { eprintln!("CRC ERROR! Expected: {}, Calculated: {}", expected_crc, crc); }
-        final_blob
+        final_data
     }
 }
