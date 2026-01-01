@@ -220,6 +220,13 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, chunk_byt
 fn do_decompress(input_path: &str, output_path: &str) {
     let start = Instant::now();
     let f_in = File::open(input_path).expect("Error opening archive");
+
+    // Controllo preventivo dimensione file
+    if f_in.metadata().unwrap().len() == 0 {
+        eprintln!("[!] ERROR: Input file is empty (0 bytes).");
+        return;
+    }
+
     let mut reader = std::io::BufReader::new(f_in);
     let mut f_out = File::create(output_path).expect("Error creating output");
     let decompressor = CASTDecompressor;
@@ -231,7 +238,14 @@ fn do_decompress(input_path: &str, output_path: &str) {
         let mut header = [0u8; 17];
         match reader.read_exact(&mut header) {
             Ok(_) => {},
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                // Se EOF capita subito al primo giro, è un errore.
+                if chunk_idx == 0 {
+                    eprintln!("[!] ERROR: File header missing or corrupted.");
+                }
+                // Se capita dopo N chunk, è la fine naturale del file.
+                break;
+            },
             Err(e) => panic!("Error reading header: {}", e),
         };
 
@@ -256,7 +270,10 @@ fn do_decompress(input_path: &str, output_path: &str) {
         let restored = decompressor.decompress(chunk_reg, chunk_ids, chunk_vars, expected_crc, id_flag);
         f_out.write_all(&restored).unwrap();
     }
-    println!("\n[+]    Decompression done in {:.2}s", start.elapsed().as_secs_f64());
+
+    if chunk_idx > 0 {
+        println!("\n[+]    Decompression done in {:.2}s", start.elapsed().as_secs_f64());
+    }
 }
 
 // --- VERIFICATION ---

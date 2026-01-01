@@ -1,13 +1,14 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::{Write, Read};
+use std::borrow::Cow; // IMPORTANTE: Per correggere l'errore di tipi/lifetime
+use std::cmp;
 use regex::Regex;
 use crc32fast::Hasher;
 use num_format::{Locale, ToFormattedString};
 use xz2::read::XzDecoder;
 use xz2::write::XzEncoder;
 use xz2::stream::{Stream, MtStreamBuilder, Check, LzmaOptions, Filters};
-use std::cmp;
 
 // --- UTILS ---
 
@@ -19,7 +20,7 @@ fn decode_python_latin1(data: &[u8]) -> String {
     data.iter().map(|&b| b as char).collect()
 }
 
-// NUOVO: Funzione inversa per ripristinare i byte originali da UTF-8 "espanso"
+// Funzione inversa per ripristinare i byte originali da UTF-8 "espanso"
 fn encode_back_to_latin1(utf8_data: Vec<u8>) -> Vec<u8> {
     let s = String::from_utf8(utf8_data).expect("CRITICAL: Failed to parse UTF-8 during Latin-1 restoration");
     s.chars().map(|c| c as u8).collect()
@@ -44,7 +45,7 @@ pub fn create_chaotic_log(filename: &str, num_lines: usize) {
     }
 }
 
-// --- FUNZIONI DI COMPRESSIONE NATIVE ---
+// --- FUNZIONI DI COMPRESSIONE NATIVE (xz2) ---
 
 const LZMA_PRESET_EXTREME: u32 = 0x80000000;
 
@@ -53,9 +54,8 @@ pub fn compress_buffer_native(data: &[u8], multithread: bool) -> Vec<u8> {
 
     let dict_size = 128 * 1024 * 1024;
 
-    // Smart Switch
+    // Smart Switch: Se i dati sono piccoli, inutile overhead dei thread
     let effective_multithread = if multithread && (data.len() as u32) < dict_size {
-        // println!("      [!]   Auto-Switch to SINGLE THREAD: Input ({} B) < Dict ({} B)", format_num(data.len()), format_num(dict_size as usize));
         false
     } else {
         multithread
@@ -68,7 +68,7 @@ pub fn compress_buffer_native(data: &[u8], multithread: bool) -> Vec<u8> {
     let mut filters = Filters::new();
     filters.lzma2(&opts);
 
-    // Allocazione Smart
+    // Allocazione buffer di output stimata
     let estimated = data.len() / 2;
     let cap_limit = dict_size as usize;
     let safe_capacity = cmp::min(estimated, cap_limit);
@@ -163,28 +163,20 @@ impl CASTCompressor {
              return self.create_passthrough(input_data, "Passthrough [Binary]");
         }
 
-        // 2. Decoding Logic (con Latin-1 Check)
-        let text_data_owned;
-        let (text_data, is_latin1) = match std::str::from_utf8(input_data) {
-            Ok(s) => (s, false), // OK UTF-8
+        // 2. Decoding Logic (con Latin-1 Check + Cow Fix)
+        let (text_cow, is_latin1) = match std::str::from_utf8(input_data) {
+            Ok(s) => (Cow::Borrowed(s), false), // OK UTF-8 (Zero copy)
             Err(_) => {
-                // Fallback Latin-1
-                text_data_owned = decode_python_latin1(input_data);
-                (&text_data_owned, true) // Flagghiamo true
+                // Fallback Latin-1 (Allocation)
+                let s = decode_python_latin1(input_data);
+                (Cow::Owned(s), true)
             }
         };
 
-        // Nota: se text_data_owned viene creato, la reference &text_data_owned vive finché vive la variabile.
-        // Qui facciamo shadowing per semplificare l'uso di text_data come &str.
-        let text_slice = if is_latin1 {
-             text_data_owned.as_str()
-        } else {
-             text_data
-        };
+        // Otteniamo un &str valido (referenziato o posseduto)
+        let text_slice = text_cow.as_ref();
 
         let active_regex = self.analyze_strategy(text_slice);
-
-        // println!("      Strategy:   {}", self.mode_name);
 
         let lines: Vec<&str> = text_slice.split_inclusive('\n').collect();
         let unique_limit = (lines.len() as f64 * if self.mode_name == "Aggressive" { 0.40 } else { 0.25 }) as u32;
@@ -313,7 +305,7 @@ impl CASTCompressor {
             for &id in &self.stream_template_ids { raw_ids.extend_from_slice(&(id as u16).to_le_bytes()); }
         }
 
-        // --- FIX: LATIN1 FLAG INJECTION ---
+        // --- LATIN1 FLAG INJECTION ---
         if is_latin1 {
             id_mode_flag |= 0x80;
         }
@@ -385,7 +377,7 @@ impl CASTDecompressor {
     pub fn decompress(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag_raw: u8) -> Vec<u8> {
         if id_flag_raw == 255 { return decompress_buffer_native(c_vars); }
 
-        // --- FIX: DECODE FLAG ---
+        // --- DECODE FLAG ---
         let is_latin1 = (id_flag_raw & 0x80) != 0;
         let id_flag = id_flag_raw & 0x7F; // Pulisce il flag
         // -----------------------
@@ -397,6 +389,7 @@ impl CASTDecompressor {
 
         if is_unified {
             let full = decompress_buffer_native(c_vars);
+            if full.len() < 8 { panic!("Corrupted Archive (Header)"); }
             let len_reg = u32::from_le_bytes(full[0..4].try_into().unwrap()) as usize;
             let len_ids = u32::from_le_bytes(full[4..8].try_into().unwrap()) as usize;
             let mut off = 8;
@@ -414,7 +407,7 @@ impl CASTDecompressor {
         }
 
         let reg_len = reg_data_bytes.len();
-        // Usiamo expect perché se fallisce qui, il file è corrotto
+        // Usiamo expect perché se fallisce qui, il file è corrotto o non è quello che pensiamo
         let reg_str = String::from_utf8(reg_data_bytes).expect("Registry corrupted (not UTF-8)");
         let skeletons: Vec<&str> = reg_str.split("\x1E").collect();
 
@@ -543,7 +536,7 @@ impl CASTDecompressor {
             }
         }
 
-        // --- STEP 4: LATIN1 RESTORATION (FIX) ---
+        // --- STEP 4: LATIN1 RESTORATION ---
         let final_data = if is_latin1 {
             encode_back_to_latin1(final_blob)
         } else {
