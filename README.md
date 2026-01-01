@@ -42,6 +42,8 @@ To provide a comprehensive evaluation, this project features **three distinct im
 2.  **🦀 Rust (Native Backend):** A standalone implementation using native Rust crates (dependency-free).
 3.  **🦀 Rust (7z Backend):** Optimized for **Maximum Throughput**, demonstrating real-world production speeds by leveraging the 7-Zip executable.
 
+> 📂 **Data Sources:** Benchmarks were performed on real-world datasets sourced from Kaggle and Open Data repositories. For a full list of source URLs and descriptions, please refer to [DATASETS.md](./DATASETS.md).
+
 > **⚠️ Important Context on Results:**
 >
 > 1.  **Python Table (Below):** Represents the theoretical maximum compression. Times include interpreter overhead.
