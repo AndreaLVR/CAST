@@ -90,25 +90,24 @@ Unlike formats like Parquet which require a pre-defined schema, CAST infers this
 
 ## 🧪 Implementation Notes: Proof of Concept
 
-This repository serves as a **scientific Proof of Concept** to demonstrate the efficacy of the CAST algorithm. It provides two distinct implementations, each with a specific goal:
+This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate the efficacy of the CAST algorithm. It provides two distinct implementations, each with a specific research goal:
 
 ### 1. 🐍 Python Implementation (The Reference)
-* **Goal:** Maximum Compression Density & Algorithmic Reference.
-* **Method:** A simplified, monolithic implementation using Python's native `lzma`. It processes the file as a single block to maximize global deduplication context.
-* **Pros:** Achieves the absolute best compression ratios (theoretical maximum) and serves as the readable baseline for the algorithm logic.
-* **Cons:** Lacks the advanced resource management (chunking) and parallelism found in the Rust port. Slower due to interpreter overhead and limited by available RAM.
+* **Goal:** Maximum Compression Density & Algorithmic Baseline.
+* **Method:** A simplified, monolithic implementation using Python's native `lzma`. It processes the file as a single block to maximize the global deduplication context.
+* **Pros:** Achieves the theoretical maximum compression ratio and serves as a readable baseline for understanding the algorithm's logic.
+* **Cons:** Slower due to interpreter overhead and limited by available physical RAM (no chunking).
 
-### 2. 🦀 Rust Implementation (The Performance Preview)
-* **Goal:** High-Performance, Scalability & Production Simulation.
-* **Method:** A highly optimized port designed for speed and resource management. Unlike the Python reference, this version introduces **Multithreading** (for parallel block processing) and **Stream Chunking** (to manage memory pressure).
+### 2. 🦀 Rust Implementation (The Performance Prototype)
+* **Goal:** High-Throughput Demonstration & Scalability.
+* **Method:** A performance-oriented **research prototype**. Unlike the Python reference, this version introduces **Multithreading** and **Stream Chunking** to demonstrate that the algorithm *can* scale to gigabyte-sized files without memory exhaustion.
 * **Backends:**
-    * **7z Backend:** Invokes the external `7z` CLI. Fastest option, max throughput.
-    * **Native Backend:** Self-contained, no external dependencies.
+    * **7z Backend:** Invokes the external `7z` CLI. Selected to demonstrate the maximum throughput potential when paired with a mature LZMA encoder.
+    * **Native Backend:** A standalone implementation using pure Rust crates.
 * **Pros:**
-    * **Structural Efficiency:** Drastically faster on datasets requiring intensive structural manipulation and complex memory access patterns, leveraging Rust's zero-cost abstractions.
-    * **Scalability:** Includes a `--chunk-size` feature to process datasets in stream-like blocks. This guarantees a **constant low-memory footprint**, preventing OS pressure or swapping even for files that technically fit in RAM but are unwieldy to load entirely.
-    * **Parallelism:** Both backends fully support multithreading, significantly accelerating large file processing.
-* **Trade-off:** The use of multithreading and block-based processing may result in a negligible compression difference (<1%) compared to the monolithic Python reference, exchanged for massive gains in throughput and scalability.
+    * **Speed:** significantly faster on complex datasets, leveraging Rust's zero-cost abstractions.
+    * **Scalability:** The `--chunk-size` feature guarantees a constant low-memory footprint, preventing OS swapping.
+* **⚠️ Maturity Note:** While optimized for speed, this is **experimental code**. It lacks the extensive error handling, fuzz-testing, and security auditing required for a production-grade compression tool. It is intended to benchmark the *algorithm*, not to replace tools like `xz` or `zstd` in critical environments.
 
 ---
 
