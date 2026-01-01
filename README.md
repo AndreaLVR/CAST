@@ -68,6 +68,14 @@ Here we measure the "Time-to-Compression" trade-off.
 
 ![Rust Performance Benchmarks](paper/rust_7zip_benchmarks.PNG)
 
+### 3. Decompression Overhead (Rust Implementation)
+*Objective: Quantify the cost of structural reconstruction.*
+
+Decompression involves decoding the columnar streams and re-assembling the original row-oriented layout. The table below compares the full restoration time of CAST against raw LZMA2 decompression.
+**Observation:** While the reconstruction step adds computational overhead compared to raw LZMA (which is extremely fast at decompression), the total time remains within practical limits for archival retrieval and cold storage use cases.
+
+![Decompression Benchmarks](paper/decompression_benchmarks.PNG)
+
 ---
 
 ## 🛠️ Methodology
