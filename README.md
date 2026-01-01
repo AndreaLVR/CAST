@@ -11,7 +11,7 @@
 ---
 
 ### 📖 [Read the Scientific Paper](./paper/CAST_Paper.pdf)
-**For a detailed analysis of the mathematical model, algorithmic complexity, and the O(N) reconstruction proofs, please refer to the full paper available in this repository.**
+**For more details please refer to the full paper available in this repository.**
 
 ---
 
