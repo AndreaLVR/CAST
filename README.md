@@ -1,34 +1,36 @@
 # CAST: Columnar Agnostic Structural Transformation
 
-> **An agnostic preprocessing algorithm that reduces structural entropy by normalizing and re-engineering data layout, enabling general-purpose compressors to achieve higher compression ratios and better speed trade-offs on structured data.**
+> **A research proof-of-concept for schema-less structural pre-processing. CAST reduces structural entropy in machine-generated data, enabling general-purpose compressors to detect long-range redundancy.**
 
-![Status](https://img.shields.io/badge/Status-Proof_of_Concept-orange)
+![Status](https://img.shields.io/badge/Status-Research_Proof_of_Concept-orange)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?logo=python&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg?logo=rust&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
-![Platform](https://img.shields.io/badge/Platform-Cross--Platform-lightgrey)
-
-> ⚠️ **Disclaimer: Proof of Concept & Performance Focus**
->
-> Please note that the implementations provided here (Python & Rust) are intended as **Proof of Concepts (PoC)** to demonstrate the algorithmic efficiency of CAST. Neither version is designed for critical production environments.
->
-> **💡 Key Performance Metric:** The critical metric to observe is the **Time-to-Compression-Ratio balance**. CAST aims for a unique "sweet spot": it often **surpasses LZMA2 compression ratios in significantly less time**, and outperforms algorithms like Zstd in **both compression density and processing speed**.
-> **The goal is to demonstrate a superior trade-off compared to standard algorithms, rather than just winning on a single metric.**
-
-**CAST** is a high-performance pre-processing algorithm designed to bridge the gap between raw structured text and modern entropy engines (like LZMA, Zstd, Brotli).
-
-Standard compressors are physically limited by their local "look-back" windows. CAST breaks this barrier by parsing the file structure globally, separating the **Skeleton** (syntax) from the **Variables** (data), and re-engineering the layout into continuous columnar streams.
-
-The result? **Compression ratios up to 135x** and processing speeds up to **10x faster** than LZMA Extreme alone.
+![Paper](https://img.shields.io/badge/Paper-Available_PDF-b31b1b)
 
 ---
 
-## ⚡ At a Glance
+### 📖 [Read the Scientific Paper](./paper/CAST_Paper.pdf)
+**For a detailed analysis of the mathematical model, algorithmic complexity, and the O(N) reconstruction proofs, please refer to the full paper available in this repository.**
 
-* 🚀 **The Performance Paradox**: Despite adding a pre-processing step, CAST reduces total compression time by up to **90%** (e.g., 2.6s vs 23s on SQL dumps).
-* 📦 **Extreme Density**: Outperforms LZMA2 (Preset 9 Extreme), Zstd (Level 22) AND Brotli (Level 11) by an additional **30-60%** on structured data files, like CSVs, server logs, JSON, SQL dumps, IoT data, and so on.
-* 🧠 **Fully Agnostic**: No schema definition required. CAST automatically detects structure in SQL, CSV, XML, JSON, Log files and, in general, in any structured data files.
-* 🔒 **Lossless**: Bit-perfect reconstruction validated by CRC32 checks.
+---
+
+## 🔬 Overview
+
+**CAST** is a structural pre-processor designed to evaluate the impact of **columnar reorganization** on general-purpose compression pipelines (such as LZMA2, Zstd, and Brotli).
+
+Standard stream compressors rely on finite "look-back" windows (dictionaries), which limits their ability to detect redundancy in verbose, row-oriented formats like CSV, Logs, or JSON. CAST parses the input structure globally, separating the syntax (**Skeleton**) from the values (**Variables**), and reorganizes the data into contiguous columnar streams before passing them to the backend compressor.
+
+This repository contains the source code and benchmarking tools used to produce the experimental results detailed in the accompanying paper.
+
+---
+
+## ⚡ Key Features
+
+* 🧠 **Schema-less Inference**: Uses **Adaptive Regex Inference** to automatically detect structure in CSV, XML, JSON, Log files, and, more generally, structured content files **without user-defined schemas**.
+* 📦 **Enhanced Density**: Reduces structural entropy, allowing standard compressors (LZMA2, Zstd, Brotli, etc) to achieve significantly higher compression ratios **on structured texts**.
+* 🚀 **Throughput Efficiency**: For **highly structured inputs**, the reduced entropy of the columnar streams lowers the backend encoding cost, often resulting in a net reduction of total execution time despite the parsing overhead.
+* 🛡️ **Robustness**: Includes a **Binary Guard** heuristic to automatically detect and passthrough non-structured or binary files, preventing data corruption or inefficiency.
 
 ---
 
