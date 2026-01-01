@@ -70,17 +70,21 @@ Here we measure the "Time-to-Compression" trade-off.
 
 ---
 
-## 🛠️ Methodology & Architecture
+## 🛠️ Methodology
 
-The core innovation of CAST is **Structural Agnosticism**. Unlike formats like Parquet which require a pre-defined schema, CAST infers the structure on the fly using a regex-based pattern recognition engine.
+The core premise of CAST is that structured text lines ($L$) can be decomposed into a static template ($S$) and a variable vector ($V$):
 
-### The Process
-1.  **Pattern Recognition**: The algorithm scans the file to identify repeating lines (Templates).
-2.  **Structural Deduplication**: It separates the static characters (**Skeleton**) from the dynamic values (**Variables**).
-3.  **Columnar Transformation**: Variables are transposed from row-oriented layout to column-oriented blocks.
-4.  **Entropy Reduction**: Since values in a column (e.g., dates, IPs, IDs) have much lower entropy than rows, the final compression/decompression step (via LZMA2) is exponentially more efficient.
+$$L \rightarrow S + V$$
 
-> 📄 **Scientific Paper:** For a deep dive into the mathematical proofs, the "Binary Guard" logic, and the specific regex strategies used for "Structural Deduction", please refer to the **LaTeX documentation** included in the `/paper` directory of this repository.
+Unlike formats like Parquet which require a pre-defined schema, CAST infers this structure dynamically using an **Adaptive Regex Engine**.
+
+### The Pipeline
+1.  **Adaptive Parsing**: The algorithm analyzes a sample of the input stream to select the optimal parsing strategy (e.g., **Strict** for delimited formats like CSV/JSON, **Aggressive** for unstructured Logs) based on structural consistency.
+2.  **Decomposition**: Valid lines are stripped of their variable data. The static structure is stored once as a **Skeleton**, while dynamic values are extracted as **Variables**.
+3.  **Columnar Transposition**: Variable vectors are transposed from a row-oriented layout into contiguous column-oriented blocks.
+4.  **Entropy Reduction**: By grouping similar data types together (e.g., a continuous stream of timestamps or IP addresses), CAST maximizes **data locality**. This allows backend compressors (such as LZMA2, Zstd, or Brotli) to detect long-range repetitions that would be invisible in the raw row-based stream.
+
+> 📄 **Scientific Paper:** For a deep dive into the mathematical proofs, the "Binary Guard" logic, and the specific regex strategies used for "Structural Deduction", please refer to the **[CAST_Paper.pdf](./paper/CAST_Paper.pdf)** included in this repository.
 
 ---
 
