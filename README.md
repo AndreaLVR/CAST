@@ -56,8 +56,8 @@ To provide a comprehensive evaluation, this project features **distinct implemen
 
 The table below compares CAST against state-of-the-art compressors (LZMA2, Zstd, Brotli) at their maximum settings. As shown, CAST consistently achieves superior density on structured inputs.
 
-> **[Insert Screenshot of Table 1 from Paper here]**
->
+![Python Reference Benchmarks](paper/python_benchmarks.PNG)
+
 > *(See `paper/CAST_Paper.pdf` for high-resolution data)*
 
 ### 2. Throughput & Latency (Rust Implementation)
@@ -66,7 +66,7 @@ The table below compares CAST against state-of-the-art compressors (LZMA2, Zstd,
 Here we measure the "Time-to-Compression" trade-off.
 **Key Finding:** For highly structured datasets, CAST is often **faster** than running standard compression directly. The time saved by the backend encoder (processing optimized, low-entropy streams) outweighs the parsing overhead.
 
-> **[Insert Screenshot of Table 2 from Paper here]**
+![Rust Performance Benchmarks](paper/rust_7zip_benchmarks.PNG)
 
 ---
 
