@@ -130,7 +130,7 @@ If you use CAST in your research or production pipeline, please cite it as:
   title = {CAST: Columnar Agnostic Structural Transformation},
   year = {2025},
   url = {[https://github.com/AndreaLVR/CAST](https://github.com/AndreaLVR/CAST)},
-  note = {A Schema-less Structural Preprocessing Algorithm for Improving General-Purpose Compression.}
+  note = {A Schema-less Structural Preprocessing Algorithm for Improving General-Purpose Compression on Structured Data.}
 }
 ```
 
