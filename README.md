@@ -40,7 +40,7 @@ To provide a comprehensive evaluation, this project features **distinct implemen
 
 1.  **🐍 Python Reference:** Single-threaded, optimized purely for **Maximum Compression Ratio** to validate the mathematical model (Theoretical Limit).
 2.  **🦀 Rust Performance Engine:** Multi-threaded, optimized for **Production Throughput** and Scalability.
-    * *Backend A (7z-linked):* Leverages the external 7-Zip executable for maximum encoding speed.
+    * *Backend A (7-Zip-linked):* Leverages the external 7-Zip executable for maximum encoding speed.
     * *Backend B (Native):* A standalone, dependency-free implementation.
 
 > 📂 **Data Sources:** Benchmarks were performed on real-world datasets sourced from Kaggle and Open Data repositories. For a full list of source URLs and descriptions, please refer to [DATASETS.md](./DATASETS.md).
@@ -102,7 +102,7 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
 * **Goal:** High-Throughput Demonstration & Scalability.
 * **Method:** A performance-oriented **research prototype**. Unlike the Python reference, this version introduces **Multithreading** and **Stream Chunking** to demonstrate that the algorithm *can* scale to gigabyte-sized files without memory exhaustion.
 * **Backends:**
-    * **7z Backend:** Invokes the external `7z` CLI. Selected to demonstrate the maximum throughput potential when paired with a mature LZMA encoder.
+    * **7-Zip Backend:** Invokes the external `7-Zip` CLI. Selected to demonstrate the maximum throughput potential when paired with a mature LZMA encoder.
     * **Native Backend:** A standalone implementation using pure Rust crates.
 * **Pros:**
     * **Speed:** significantly faster on complex datasets, leveraging Rust's zero-cost abstractions.
