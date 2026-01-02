@@ -1,48 +1,210 @@
+use std::time::Instant;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, File};
 use std::io::{Write};
 use std::process::Command;
 use std::env;
+use std::borrow::Cow;
+use std::cmp;
 
-use regex::Regex;
+// NOTA: regex non serve più!
 use crc32fast::Hasher;
 use rand::Rng;
 
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
+// ============================================================================
+//  STRUCT OTTIMIZZATA PER MEMORIA (ARENA / FLAT BUFFER)
+// ============================================================================
 
-// Helper function to determine the 7z path
-fn get_7z_cmd() -> String {
-    // 1. Try reading the specific environment variable
-    if let Ok(path) = env::var("SEVEN_ZIP_PATH") {
-        return path;
+#[derive(Clone)]
+struct ColumnBuffer {
+    data: Vec<u8>,
+    offsets: Vec<usize>
+}
+
+impl ColumnBuffer {
+    fn new() -> Self {
+        Self {
+            data: Vec::with_capacity(4096),
+            offsets: Vec::with_capacity(128)
+        }
     }
 
-    // 2. Fallback: assume "7z" is in the system global PATH
-    if cfg!(target_os = "windows") {
-        "7z.exe".to_string()
-    } else {
-        "7z".to_string()
+    fn push(&mut self, s: &str) {
+        self.data.extend_from_slice(s.as_bytes());
+        self.offsets.push(self.data.len());
+    }
+
+    fn get(&self, index: usize) -> &[u8] {
+        let start = if index == 0 { 0 } else { self.offsets[index - 1] };
+        let end = self.offsets[index];
+        &self.data[start..end]
+    }
+
+    fn len(&self) -> usize {
+        self.offsets.len()
     }
 }
 
-// --- 7-ZIP HELPER FUNCTIONS ---
+// ============================================================================
+//  PARSER MANUALE (REPLICA ESATTA DELLE REGEX)
+// ============================================================================
+
+#[derive(Clone, Copy, PartialEq)]
+enum ParsingMode { Strict, Aggressive }
+
+#[inline(always)]
+fn is_digit(b: u8) -> bool { b >= b'0' && b <= b'9' }
+
+#[inline(always)]
+fn is_hex_digit(b: u8) -> bool {
+    (b >= b'0' && b <= b'9') || (b >= b'a' && b <= b'f') || (b >= b'A' && b <= b'F')
+}
+
+#[inline(always)]
+fn is_aggr_char(b: u8) -> bool {
+    (b >= b'a' && b <= b'z') || (b >= b'A' && b <= b'Z') ||
+    (b >= b'0' && b <= b'9') || b == b'_' || b == b'.' || b == b'-'
+}
+
+// Replica regex: \-?\d+(?:\.\d+)?
+fn match_strict_number(bytes: &[u8]) -> usize {
+    let len = bytes.len();
+    let mut i = 0;
+
+    // Optional '-'
+    if i < len && bytes[i] == b'-' { i += 1; }
+
+    // Must have at least one digit
+    if i >= len || !is_digit(bytes[i]) { return 0; }
+    while i < len && is_digit(bytes[i]) { i += 1; }
+
+    // Optional group: (?:\.\d+)?
+    // IMPORTANTE: Consuma il punto SOLO se seguito da una cifra (Lookahead)
+    if i + 1 < len && bytes[i] == b'.' {
+        if is_digit(bytes[i+1]) {
+            i += 2;
+            while i < len && is_digit(bytes[i]) { i += 1; }
+        }
+    }
+    i
+}
+
+// Replica regex: 0x[0-9a-fA-F]+
+fn match_strict_hex(bytes: &[u8]) -> usize {
+    if bytes.len() < 3 { return 0; }
+    if bytes[0] == b'0' && bytes[1] == b'x' && is_hex_digit(bytes[2]) {
+        let mut i = 3;
+        while i < bytes.len() && is_hex_digit(bytes[i]) { i += 1; }
+        return i;
+    }
+    0
+}
+
+/// Parsa la riga cercando token. Replica `findall`.
+fn parse_line_manual<'a>(line: &'a str, mode: ParsingMode, buffer_vars: &mut Vec<&'a str>, buffer_skel: &mut String) {
+    let bytes = line.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut last_struct_start = 0;
+
+    while i < len {
+        let b = bytes[i];
+        let remaining = &bytes[i..];
+        let mut matched_len = 0;
+
+        // 1. QUOTED STRING: "(?:[^"\\]|\\.|"")*"
+        if b == b'"' {
+            let mut k = 1; // Skip opening quote
+            let mut closed = false;
+            while k < remaining.len() {
+                let curr = remaining[k];
+                if curr == b'\\' {
+                    k += 2; // Escape (skip next)
+                } else if curr == b'"' {
+                    // Check for CSV escape ""
+                    if k + 1 < remaining.len() && remaining[k+1] == b'"' {
+                         k += 2;
+                    } else {
+                        k += 1; // Closing quote
+                        closed = true;
+                        break;
+                    }
+                } else {
+                    k += 1;
+                }
+            }
+            if closed {
+                matched_len = k;
+                let content = &line[i+1 .. i+matched_len-1]; // Strip quotes
+
+                if i > last_struct_start { buffer_skel.push_str(&line[last_struct_start..i]); }
+                buffer_vars.push(content);
+                buffer_skel.push_str("\"\x00\"");
+
+                i += matched_len;
+                last_struct_start = i;
+                continue;
+            }
+        }
+
+        // 2. TOKENS
+        if mode == ParsingMode::Aggressive {
+            // Greedy match [a-zA-Z0-9_.\-]+
+            if is_aggr_char(b) {
+                let mut k = 1;
+                while k < remaining.len() && is_aggr_char(remaining[k]) { k += 1; }
+                matched_len = k;
+            }
+        } else {
+            // Strict Mode: Hex First, then Number
+            matched_len = match_strict_hex(remaining);
+            if matched_len == 0 {
+                matched_len = match_strict_number(remaining);
+            }
+        }
+
+        if matched_len > 0 {
+            if i > last_struct_start { buffer_skel.push_str(&line[last_struct_start..i]); }
+
+            let token = &line[i .. i+matched_len];
+            buffer_vars.push(token);
+            buffer_skel.push('\x00');
+
+            i += matched_len;
+            last_struct_start = i;
+        } else {
+            i += 1;
+        }
+    }
+
+    if last_struct_start < len {
+        buffer_skel.push_str(&line[last_struct_start..]);
+    }
+}
+
+// ============================================================================
+//  7-ZIP HELPER FUNCTIONS
+// ============================================================================
+
+fn get_7z_cmd() -> String {
+    if let Ok(path) = env::var("SEVEN_ZIP_PATH") { return path; }
+    if cfg!(target_os = "windows") { "7z.exe".to_string() } else { "7z".to_string() }
+}
 
 pub fn compress_with_7z(data: &[u8]) -> Vec<u8> {
     if data.is_empty() { return Vec::new(); }
 
     let pid = std::process::id();
-    // Usa un random u32 per evitare collisioni se il PID viene riciclato velocemente o in thread
     let rnd = rand::thread_rng().gen::<u32>();
     let tmp_in = format!("temp_in_{}_{}.bin", pid, rnd);
     let tmp_out = format!("temp_out_{}_{}.xz", pid, rnd);
 
-    // Pulizia preventiva
     let _ = fs::remove_file(&tmp_in);
     let _ = fs::remove_file(&tmp_out);
 
-    // 1. Scrittura Input (con check errori)
     {
         let mut f = File::create(&tmp_in).expect("CRITICAL: Cannot create temp input file");
         f.write_all(data).expect("CRITICAL: Cannot write data to temp input file");
@@ -50,21 +212,18 @@ pub fn compress_with_7z(data: &[u8]) -> Vec<u8> {
     }
 
     let cmd = get_7z_cmd();
-
-    // 2. Esecuzione 7z
+    // 7-Zip gestisce il threading (-mmt=on).
     let output = Command::new(&cmd)
-        // Nota: d128m usa MOLTA RAM. Se va in OOM, lo vedremo ora grazie al panic sotto.
         .args(&["a", "-txz", "-mx=9", "-mmt=on", "-m0=lzma2:d128m", "-y", "-bb0", &tmp_out, &tmp_in])
         .output();
 
-    // 3. Gestione Rigorosa dell'Output
     match output {
         Ok(out) => {
             if !out.status.success() {
                 let stderr = String::from_utf8_lossy(&out.stderr);
                 let _ = fs::remove_file(&tmp_in);
                 let _ = fs::remove_file(&tmp_out);
-                panic!("\n[!] 7-ZIP CRASHED! Exit Code: {}\n[!] STDERR: {}\n[!] Hint: Try reducing dictionary size (-m0=lzma2:d64m) or use Chunking.", out.status, stderr);
+                panic!("\n[!] 7-ZIP CRASHED! Exit Code: {}\n[!] STDERR: {}", out.status, stderr);
             }
         },
         Err(e) => {
@@ -73,19 +232,16 @@ pub fn compress_with_7z(data: &[u8]) -> Vec<u8> {
         }
     }
 
-    // 4. Lettura Risultato
     let result = match fs::read(&tmp_out) {
         Ok(d) => d,
         Err(e) => {
             let _ = fs::remove_file(&tmp_in);
-            panic!("\n[!] CRITICAL: 7z finished successfully but output file '{}' is missing/unreadable. IO Error: {}", tmp_out, e);
+            panic!("\n[!] CRITICAL: 7z output missing. IO Error: {}", e);
         }
     };
 
-    // Cleanup
     let _ = fs::remove_file(&tmp_in);
     let _ = fs::remove_file(&tmp_out);
-
     result
 }
 
@@ -124,25 +280,23 @@ fn decode_python_latin1(data: &[u8]) -> String {
     data.iter().map(|&b| b as char).collect()
 }
 
-// NUOVO: Funzione inversa per ripristinare i byte originali da UTF-8 "espanso"
 fn encode_back_to_latin1(utf8_data: Vec<u8>) -> Vec<u8> {
-    // Convertiamo i byte UTF-8 in Stringa (sicuro perché l'abbiamo creata noi)
     let s = String::from_utf8(utf8_data).expect("CRITICAL: Failed to parse UTF-8 during Latin-1 restoration");
-    // Ogni char in Rust è un Unicode scalar value.
-    // Poiché decode_python_latin1 mappa 1:1 i byte 0..255 sui codepoint 0..255,
-    // il cast `c as u8` è l'inverso esatto e senza perdita per questo sottoinsieme.
     s.chars().map(|c| c as u8).collect()
 }
 
-// --- COMPRESSOR (CAST Logic with 7z) ---
+// ============================================================================
+//  CAST COMPRESSOR
+// ============================================================================
 
 pub struct CASTCompressor {
     template_map: HashMap<String, u32>,
     skeletons_list: Vec<String>,
     stream_template_ids: Vec<u32>,
-    columns_storage: HashMap<u32, Vec<Vec<String>>>,
+    // OTTIMIZZATO: ColumnBuffer
+    columns_storage: HashMap<u32, Vec<ColumnBuffer>>,
     next_template_id: u32,
-    mode_name: String,
+    mode: ParsingMode,
     #[allow(dead_code)]
     multithread: bool,
 }
@@ -155,31 +309,36 @@ impl CASTCompressor {
             stream_template_ids: Vec::new(),
             columns_storage: HashMap::new(),
             next_template_id: 0,
-            mode_name: "Strict".to_string(),
+            mode: ParsingMode::Strict,
             multithread,
         }
     }
 
-    fn analyze_strategy(&mut self, text: &str) -> Regex {
-        let r_strict = Regex::new(r#"("(?:[^"\\]|\\.|"")*"|\-?\d+(?:\.\d+)?|0x[0-9a-fA-F]+)"#).unwrap();
-        let r_aggr = Regex::new(r#"("(?:[^"\\]|\\.|"")*"|[a-zA-Z0-9_.\-]+)"#).unwrap();
-
-        let sample_lines: Vec<&str> = text.lines().take(1000).collect();
-        if sample_lines.is_empty() { return r_strict; }
-
+    fn analyze_strategy(&mut self, text: &str) {
+        let sample_limit = 1000;
         let mut strict_templates = HashSet::new();
-        for line in &sample_lines {
-            let skel = r_strict.replace_all(line, "\x00");
-            strict_templates.insert(skel.to_string());
+        let mut line_count = 0;
+
+        // Buffer riutilizzabili per l'analisi
+        let mut temp_vars = Vec::with_capacity(16);
+        let mut temp_skel = String::with_capacity(256);
+
+        for line in text.lines().take(sample_limit) {
+            line_count += 1;
+            temp_vars.clear();
+            temp_skel.clear();
+            // Analisi sempre in Strict per decidere
+            parse_line_manual(line, ParsingMode::Strict, &mut temp_vars, &mut temp_skel);
+            strict_templates.insert(temp_skel.clone());
         }
 
-        let ratio = strict_templates.len() as f64 / sample_lines.len() as f64;
+        if line_count == 0 { return; }
+        let ratio = strict_templates.len() as f64 / line_count as f64;
+
         if ratio > 0.10 {
-            self.mode_name = "Aggressive".to_string();
-            r_aggr
+            self.mode = ParsingMode::Aggressive;
         } else {
-            self.mode_name = "Strict".to_string();
-            r_strict
+            self.mode = ParsingMode::Strict;
         }
     }
 
@@ -192,79 +351,79 @@ impl CASTCompressor {
              return self.create_passthrough(input_data, "Passthrough [Binary]");
         }
 
-        // 2. Decoding Logic (con rilevamento Latin-1)
-        let text_data_owned;
-        let (text_data, is_latin1) = match std::str::from_utf8(input_data) {
-            Ok(s) => (s, false), // È UTF-8 valido
+        // 2. Decoding Logic
+        let (text_cow, is_latin1) = match std::str::from_utf8(input_data) {
+            Ok(s) => (Cow::Borrowed(s), false),
             Err(_) => {
-                // Fallback: decodifica Latin-1 (byte-to-char mapping)
-                text_data_owned = decode_python_latin1(input_data);
-                (text_data_owned.as_str(), true)
+                let s = decode_python_latin1(input_data);
+                (Cow::Owned(s), true)
             }
         };
 
-        let active_regex = self.analyze_strategy(text_data);
+        let text_slice = text_cow.as_ref();
 
-        let lines: Vec<&str> = text_data.split_inclusive('\n').collect();
-        let unique_limit = (lines.len() as f64 * if self.mode_name == "Aggressive" { 0.40 } else { 0.25 }) as u32;
+        // Imposta la strategia (Parser Manuale)
+        self.analyze_strategy(text_slice);
 
-        // 3. Processing Lines
+        let lines = text_slice.split_inclusive('\n');
+        let unique_limit = (text_slice.len() as f64 / 64.0 * if self.mode == ParsingMode::Aggressive { 0.40 } else { 0.25 }) as u32;
+
+        // 3. Processing Lines (Zero-Allocation Loop)
+        let mut vars_cache: Vec<&str> = Vec::with_capacity(32);
+        let mut skel_cache = String::with_capacity(512);
+
         for line in lines {
             if line.is_empty() { continue; }
 
-            let mut skeleton = String::with_capacity(line.len());
-            let mut vars = Vec::new();
-            let mut last_end = 0;
+            vars_cache.clear();
+            skel_cache.clear();
 
-            for caps in active_regex.captures_iter(line) {
-                let m = caps.get(0).unwrap();
-                skeleton.push_str(&line[last_end..m.start()]);
-                let token = m.as_str();
-                if token.starts_with('"') {
-                    if token.len() >= 2 { vars.push(token[1..token.len()-1].to_string()); }
-                    else { vars.push(token.to_string()); }
-                    skeleton.push_str("\"\x00\"");
-                } else {
-                    vars.push(token.to_string());
-                    skeleton.push('\x00');
-                }
-                last_end = m.end();
-            }
-            skeleton.push_str(&line[last_end..]);
+            // PARSER MANUALE (NO REGEX)
+            parse_line_manual(line, self.mode, &mut vars_cache, &mut skel_cache);
 
             let t_id;
-            if let Some(&id) = self.template_map.get(&skeleton) {
+            if let Some(&id) = self.template_map.get(&skel_cache) {
                 t_id = id;
             } else {
-                if self.next_template_id > unique_limit {
+                if self.next_template_id > unique_limit && self.next_template_id > 100 {
                     return self.create_passthrough(input_data, "Passthrough [Entropy]");
                 }
                 t_id = self.next_template_id;
-                self.template_map.insert(skeleton.clone(), t_id);
-                self.skeletons_list.push(skeleton);
-                self.columns_storage.insert(t_id, vec![Vec::new(); vars.len()]);
+                self.template_map.insert(skel_cache.clone(), t_id);
+                self.skeletons_list.push(skel_cache.clone());
+                self.columns_storage.insert(t_id, Vec::new());
                 self.next_template_id += 1;
             }
 
             self.stream_template_ids.push(t_id);
             let cols = self.columns_storage.get_mut(&t_id).unwrap();
-            let limit = std::cmp::min(vars.len(), cols.len());
+
+            if cols.is_empty() {
+                for _ in 0..vars_cache.len() {
+                    cols.push(ColumnBuffer::new());
+                }
+            }
+
+            let limit = std::cmp::min(vars_cache.len(), cols.len());
             for i in 0..limit {
-                cols[i].push(vars[i].clone());
+                // PUSH OTTIMIZZATO SU BUFFER
+                cols[i].push(vars_cache[i]);
             }
         }
 
         // 4. Heuristic
         let num_templates = self.skeletons_list.len();
         let mut decision_mode = "UNIFIED";
+
         if num_templates < 256 {
             let mut sample_buffer = Vec::new();
             let mut collected = 0;
             for t_id in 0..std::cmp::min(num_templates, 5) {
                 if let Some(cols) = self.columns_storage.get(&(t_id as u32)) {
                     for col in cols {
-                        for v in col.iter().take(50) {
-                            sample_buffer.extend_from_slice(v.as_bytes());
+                        let limit_sample = std::cmp::min(col.len(), 50);
+                        for k in 0..limit_sample {
+                            sample_buffer.extend_from_slice(col.get(k));
                             collected += 1;
                         }
                         if collected > 2000 { break; }
@@ -282,7 +441,7 @@ impl CASTCompressor {
             }
         }
 
-        // 5. Unified Remapping
+        // 5. Unified Remapping (Optimized)
         if decision_mode == "UNIFIED" {
             let mut counts = HashMap::new();
             let mut first_appearance = HashMap::new();
@@ -303,11 +462,15 @@ impl CASTCompressor {
             });
             let mut remap = HashMap::new();
             for (new, &old) in sorted_ids.iter().enumerate() { remap.insert(old, new as u32); }
+
             let mut new_skels = vec![String::new(); num_templates];
             let mut new_cols = HashMap::new();
+
             for (old, &new) in &remap {
                 new_skels[new as usize] = self.skeletons_list[*old as usize].clone();
-                new_cols.insert(new, self.columns_storage.remove(old).unwrap());
+                if let Some(buf) = self.columns_storage.remove(old) {
+                    new_cols.insert(new, buf);
+                }
             }
             self.skeletons_list = new_skels;
             self.columns_storage = new_cols;
@@ -318,7 +481,7 @@ impl CASTCompressor {
         let reg_sep = "\x1E";
         let raw_registry = self.skeletons_list.join(reg_sep).into_bytes();
         let mut raw_ids = Vec::new();
-        let mut id_mode_flag; // Mutabile per flaggare Latin-1
+        let mut id_mode_flag;
 
         if num_templates == 1 { id_mode_flag = 3; }
         else if num_templates < 256 {
@@ -332,13 +495,8 @@ impl CASTCompressor {
             for &id in &self.stream_template_ids { raw_ids.extend_from_slice(&(id as u16).to_le_bytes()); }
         }
 
-        // --- LATIN1 FLAG INJECTION ---
-        // Se abbiamo usato il fallback Latin-1, alziamo il bit più alto (0x80)
-        if is_latin1 {
-            id_mode_flag |= 0x80;
-        }
+        if is_latin1 { id_mode_flag |= 0x80; }
 
-        // --- SAFE SEPARATORS LOGIC ---
         let row_sep = b"\x00";
         let col_sep_split = b"\xFF\xFF";
         let col_sep_unified = b"\x02";
@@ -348,16 +506,19 @@ impl CASTCompressor {
         let esc_seq_sep = b"\x01\x00";
         let esc_seq_col = b"\x01\x03";
 
-        let mut vars_buffer = Vec::new();
+        let mut vars_buffer = Vec::with_capacity(input_data.len());
         let is_unified = decision_mode == "UNIFIED";
         let col_sep = if is_unified { col_sep_unified.as_slice() } else { col_sep_split.as_slice() };
 
         for t_id in 0..self.skeletons_list.len() {
             if let Some(cols) = self.columns_storage.get(&(t_id as u32)) {
-                for col in cols {
-                    for (idx, v) in col.iter().enumerate() {
+                for col_buf in cols {
+                    // ITERAZIONE OTTIMIZZATA
+                    for idx in 0..col_buf.len() {
                         if idx > 0 { vars_buffer.extend_from_slice(row_sep); }
-                        let v_bytes = v.as_bytes();
+
+                        let v_bytes = col_buf.get(idx);
+
                         if is_unified {
                             for &b in v_bytes {
                                 if b == esc_char[0] { vars_buffer.extend_from_slice(esc_seq_esc); }
@@ -372,12 +533,17 @@ impl CASTCompressor {
             }
         }
 
-        // 7. Final Compression
+        let mode_str = match self.mode {
+            ParsingMode::Strict => "Strict",
+            ParsingMode::Aggressive => "Aggressive"
+        };
+
+        // 7. Final Compression (BACKEND 7-ZIP)
         if decision_mode == "SPLIT" {
             let c_reg = compress_with_7z(&raw_registry);
             let c_ids = compress_with_7z(&raw_ids);
             let c_vars = compress_with_7z(&vars_buffer);
-            (c_reg, c_ids, c_vars, id_mode_flag, self.mode_name.clone())
+            (c_reg, c_ids, c_vars, id_mode_flag, mode_str.to_string())
         } else {
             let len_reg = raw_registry.len() as u32;
             let len_ids = raw_ids.len() as u32;
@@ -388,7 +554,7 @@ impl CASTCompressor {
             solid.extend_from_slice(&raw_ids);
             solid.extend_from_slice(&vars_buffer);
             let c_solid = compress_with_7z(&solid);
-            (Vec::new(), Vec::new(), c_solid, id_mode_flag, self.mode_name.clone())
+            (Vec::new(), Vec::new(), c_solid, id_mode_flag, mode_str.to_string())
         }
     }
 
@@ -398,25 +564,24 @@ impl CASTCompressor {
     }
 }
 
-// --- DECOMPRESSOR (Zero-Alloc / Zero-Copy Logic with 7z) ---
+// ============================================================================
+//  CAST DECOMPRESSOR (WITH 7-ZIP BACKEND)
+// ============================================================================
 
 pub struct CASTDecompressor;
 impl CASTDecompressor {
     pub fn decompress(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag_raw: u8) -> Vec<u8> {
-        // 1. Passthrough Check
+        let start_time = Instant::now();
+
         if id_flag_raw == 255 {
             let data = decompress_with_7z(c_vars);
-            // Verifica CRC anche per passthrough
             let mut h = Hasher::new();
             h.update(&data);
             if h.finalize() != expected_crc { eprintln!("CRC ERROR (Passthrough)!"); }
             return data;
         }
 
-        // 2. Decode Latin1 Flag
-        // Estraiamo il bit alto per sapere se era Latin-1
         let is_latin1 = (id_flag_raw & 0x80) != 0;
-        // Puliamo il flag per l'uso normale
         let id_flag = id_flag_raw & 0x7F;
 
         let is_unified = c_reg.is_empty() && c_ids.is_empty();
@@ -426,7 +591,7 @@ impl CASTDecompressor {
 
         if is_unified {
             let full = decompress_with_7z(c_vars);
-            if full.len() < 8 { return Vec::new(); } // Safety check
+            if full.len() < 8 { return Vec::new(); }
             let len_reg = u32::from_le_bytes(full[0..4].try_into().unwrap()) as usize;
             let len_ids = u32::from_le_bytes(full[4..8].try_into().unwrap()) as usize;
             let mut off = 8;
@@ -444,7 +609,6 @@ impl CASTDecompressor {
         }
 
         let reg_len = reg_data_bytes.len();
-        // Usiamo expect perché se la registry non è UTF-8, abbiamo problemi più grossi
         let reg_str = String::from_utf8(reg_data_bytes).expect("Registry is not valid UTF-8");
         let skeletons: Vec<&str> = reg_str.split("\x1E").collect();
 
@@ -461,7 +625,6 @@ impl CASTDecompressor {
         let col_sep_split = b"\xFF\xFF";
         let sep = if is_unified { col_sep_unified.as_slice() } else { col_sep_split.as_slice() };
 
-        // --- STEP 1: Column Indexing (Zero Copy) ---
         let mut raw_columns_offsets = Vec::new();
         let mut start = 0;
         let mut i = 0;
@@ -477,7 +640,6 @@ impl CASTDecompressor {
         if start < max_len { raw_columns_offsets.push((start, max_len)); }
         if let Some((s, e)) = raw_columns_offsets.last() { if s == e { raw_columns_offsets.pop(); } }
 
-        // --- STEP 2: Cell Parsing (Zero Alloc) ---
         let mut columns_storage: Vec<Vec<VecDeque<(usize, usize)>>> = vec![Vec::new(); skeletons.len()];
         let mut col_iter = raw_columns_offsets.into_iter();
         let row_sep_byte = b"\x00"[0];
@@ -487,31 +649,24 @@ impl CASTDecompressor {
             for _ in 0..num_vars {
                 if let Some((col_start, col_end)) = col_iter.next() {
                     let mut deque = VecDeque::new();
-
                     if !is_unified {
                         let mut curr = col_start;
                         while curr < col_end {
                             let mut next_sep = curr;
-                            while next_sep < col_end && vars_data_bytes[next_sep] != row_sep_byte {
-                                next_sep += 1;
-                            }
+                            while next_sep < col_end && vars_data_bytes[next_sep] != row_sep_byte { next_sep += 1; }
                             deque.push_back((curr, next_sep));
                             curr = next_sep + 1;
                         }
                     } else {
-                        // Unified Parser
                         let mut curr = col_start;
                         let mut cell_start = curr;
                         while curr < col_end {
-                             if vars_data_bytes[curr] == 0x01 {
-                                 curr += 2;
-                             } else if vars_data_bytes[curr] == row_sep_byte {
+                             if vars_data_bytes[curr] == 0x01 { curr += 2; }
+                             else if vars_data_bytes[curr] == row_sep_byte {
                                  deque.push_back((cell_start, curr));
                                  curr += 1;
                                  cell_start = curr;
-                             } else {
-                                 curr += 1;
-                             }
+                             } else { curr += 1; }
                         }
                         deque.push_back((cell_start, curr));
                     }
@@ -523,8 +678,6 @@ impl CASTDecompressor {
         let skel_parts_cache: Vec<Vec<&str>> = skeletons.iter().map(|s| s.split("\x00").collect()).collect();
         let mut final_blob = Vec::with_capacity(vars_data_bytes.len() + reg_len);
 
-        // --- STEP 3: Reconstruction ---
-
         let append_unescaped = |blob: &mut Vec<u8>, slice: &[u8]| {
             if is_unified {
                 let mut k = 0;
@@ -535,14 +688,9 @@ impl CASTDecompressor {
                         else if nb == 0x00 { blob.push(0x00); }
                         else if nb == 0x03 { blob.push(0x02); }
                         k += 2;
-                    } else {
-                        blob.push(slice[k]);
-                        k += 1;
-                    }
+                    } else { blob.push(slice[k]); k += 1; }
                 }
-            } else {
-                blob.extend_from_slice(slice);
-            }
+            } else { blob.extend_from_slice(slice); }
         };
 
         if id_flag == 3 {
@@ -574,19 +722,12 @@ impl CASTDecompressor {
             }
         }
 
-        // --- STEP 4: LATIN1 RESTORATION (If needed) ---
-        // Se il flag era attivo, significa che il file originale non era UTF-8, ma Latin-1.
-        // Dobbiamo riconvertire i caratteri multibyte in byte singoli.
-        let final_data = if is_latin1 {
-            encode_back_to_latin1(final_blob)
-        } else {
-            final_blob
-        };
-
+        let final_data = if is_latin1 { encode_back_to_latin1(final_blob) } else { final_blob };
         let mut h = Hasher::new();
         h.update(&final_data);
-        let crc = h.finalize();
-        if crc != expected_crc { eprintln!("CRC ERROR! Expected: {}, Calculated: {}", expected_crc, crc); }
+        if h.finalize() != expected_crc { eprintln!("CRC Check Failed."); }
+        let duration = start_time.elapsed();
+        println!("Decompressione (7-Zip) terminata in {:.4} secondi", duration.as_secs_f64());
         final_data
     }
 }
