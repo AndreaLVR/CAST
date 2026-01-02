@@ -7,7 +7,7 @@ use std::env;
 use std::borrow::Cow;
 use std::cmp;
 
-// NOTA: regex non serve più!
+// NOTA: Regex rimossa per mantenere i 50s di speedup!
 use crc32fast::Hasher;
 use rand::Rng;
 
@@ -15,7 +15,7 @@ use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
 // ============================================================================
-//  STRUCT OTTIMIZZATA PER MEMORIA (ARENA / FLAT BUFFER)
+//  STRUCT OTTIMIZZATA (ZERO-ALLOC INITIALIZATION)
 // ============================================================================
 
 #[derive(Clone)]
@@ -25,31 +25,38 @@ struct ColumnBuffer {
 }
 
 impl ColumnBuffer {
+    // FIX MEMORIA CRITICO:
+    // Inizializza i vettori a zero.
+    // Su file complessi (JSON/GloVe) con milioni di template, questo evita
+    // l'allocazione istantanea di GB di RAM che causava il freeze/rallentamento.
     fn new() -> Self {
         Self {
-            data: Vec::with_capacity(4096),
-            offsets: Vec::with_capacity(128)
+            data: Vec::new(),
+            offsets: Vec::new()
         }
     }
 
+    #[inline(always)]
     fn push(&mut self, s: &str) {
         self.data.extend_from_slice(s.as_bytes());
         self.offsets.push(self.data.len());
     }
 
+    #[inline(always)]
     fn get(&self, index: usize) -> &[u8] {
         let start = if index == 0 { 0 } else { self.offsets[index - 1] };
         let end = self.offsets[index];
         &self.data[start..end]
     }
 
+    #[inline(always)]
     fn len(&self) -> usize {
         self.offsets.len()
     }
 }
 
 // ============================================================================
-//  PARSER MANUALE (REPLICA ESATTA DELLE REGEX)
+//  PARSER MANUALE (REPLICA REGEX + IPER-OTTIMIZZATO)
 // ============================================================================
 
 #[derive(Clone, Copy, PartialEq)]
@@ -70,6 +77,7 @@ fn is_aggr_char(b: u8) -> bool {
 }
 
 // Replica regex: \-?\d+(?:\.\d+)?
+#[inline(always)]
 fn match_strict_number(bytes: &[u8]) -> usize {
     let len = bytes.len();
     let mut i = 0;
@@ -82,7 +90,6 @@ fn match_strict_number(bytes: &[u8]) -> usize {
     while i < len && is_digit(bytes[i]) { i += 1; }
 
     // Optional group: (?:\.\d+)?
-    // IMPORTANTE: Consuma il punto SOLO se seguito da una cifra (Lookahead)
     if i + 1 < len && bytes[i] == b'.' {
         if is_digit(bytes[i+1]) {
             i += 2;
@@ -93,6 +100,7 @@ fn match_strict_number(bytes: &[u8]) -> usize {
 }
 
 // Replica regex: 0x[0-9a-fA-F]+
+#[inline(always)]
 fn match_strict_hex(bytes: &[u8]) -> usize {
     if bytes.len() < 3 { return 0; }
     if bytes[0] == b'0' && bytes[1] == b'x' && is_hex_digit(bytes[2]) {
@@ -103,7 +111,9 @@ fn match_strict_hex(bytes: &[u8]) -> usize {
     0
 }
 
-/// Parsa la riga cercando token. Replica `findall`.
+/// Parsa la riga cercando token. Replica `findall` delle regex ma senza overhead.
+/// #[inline(never)] per non ingigantire `compress`, ma il loop interno è velocissimo.
+#[inline(never)]
 fn parse_line_manual<'a>(line: &'a str, mode: ParsingMode, buffer_vars: &mut Vec<&'a str>, buffer_skel: &mut String) {
     let bytes = line.as_bytes();
     let len = bytes.len();
@@ -112,32 +122,33 @@ fn parse_line_manual<'a>(line: &'a str, mode: ParsingMode, buffer_vars: &mut Vec
 
     while i < len {
         let b = bytes[i];
-        let remaining = &bytes[i..];
-        let mut matched_len = 0;
 
         // 1. QUOTED STRING: "(?:[^"\\]|\\.|"")*"
+        // Ottimizzato per saltare velocemente
         if b == b'"' {
             let mut k = 1; // Skip opening quote
             let mut closed = false;
+            let remaining = &bytes[i..];
+
             while k < remaining.len() {
                 let curr = remaining[k];
-                if curr == b'\\' {
-                    k += 2; // Escape (skip next)
-                } else if curr == b'"' {
-                    // Check for CSV escape ""
+                if curr == b'"' {
                     if k + 1 < remaining.len() && remaining[k+1] == b'"' {
                          k += 2;
                     } else {
-                        k += 1; // Closing quote
+                        k += 1;
                         closed = true;
                         break;
                     }
+                } else if curr == b'\\' {
+                    k += 2;
                 } else {
                     k += 1;
                 }
             }
+
             if closed {
-                matched_len = k;
+                let matched_len = k;
                 let content = &line[i+1 .. i+matched_len-1]; // Strip quotes
 
                 if i > last_struct_start { buffer_skel.push_str(&line[last_struct_start..i]); }
@@ -151,15 +162,17 @@ fn parse_line_manual<'a>(line: &'a str, mode: ParsingMode, buffer_vars: &mut Vec
         }
 
         // 2. TOKENS
+        let mut matched_len = 0;
+        let remaining = &bytes[i..];
+
         if mode == ParsingMode::Aggressive {
-            // Greedy match [a-zA-Z0-9_.\-]+
             if is_aggr_char(b) {
                 let mut k = 1;
                 while k < remaining.len() && is_aggr_char(remaining[k]) { k += 1; }
                 matched_len = k;
             }
         } else {
-            // Strict Mode: Hex First, then Number
+            // Strict Mode: Check Hex then Number
             matched_len = match_strict_hex(remaining);
             if matched_len == 0 {
                 matched_len = match_strict_number(remaining);
@@ -191,7 +204,13 @@ fn parse_line_manual<'a>(line: &'a str, mode: ParsingMode, buffer_vars: &mut Vec
 
 fn get_7z_cmd() -> String {
     if let Ok(path) = env::var("SEVEN_ZIP_PATH") { return path; }
-    if cfg!(target_os = "windows") { "7z.exe".to_string() } else { "7z".to_string() }
+    if cfg!(target_os = "windows") {
+        let standard = r"C:\Program Files\7-Zip\7z.exe";
+        if std::path::Path::new(standard).exists() { return standard.to_string(); }
+        "7z.exe".to_string()
+    } else {
+        "7z".to_string()
+    }
 }
 
 pub fn compress_with_7z(data: &[u8]) -> Vec<u8> {
@@ -212,7 +231,6 @@ pub fn compress_with_7z(data: &[u8]) -> Vec<u8> {
     }
 
     let cmd = get_7z_cmd();
-    // 7-Zip gestisce il threading (-mmt=on).
     let output = Command::new(&cmd)
         .args(&["a", "-txz", "-mx=9", "-mmt=on", "-m0=lzma2:d128m", "-y", "-bb0", &tmp_out, &tmp_in])
         .output();
@@ -293,7 +311,6 @@ pub struct CASTCompressor {
     template_map: HashMap<String, u32>,
     skeletons_list: Vec<String>,
     stream_template_ids: Vec<u32>,
-    // OTTIMIZZATO: ColumnBuffer
     columns_storage: HashMap<u32, Vec<ColumnBuffer>>,
     next_template_id: u32,
     mode: ParsingMode,
@@ -319,7 +336,6 @@ impl CASTCompressor {
         let mut strict_templates = HashSet::new();
         let mut line_count = 0;
 
-        // Buffer riutilizzabili per l'analisi
         let mut temp_vars = Vec::with_capacity(16);
         let mut temp_skel = String::with_capacity(256);
 
@@ -327,8 +343,11 @@ impl CASTCompressor {
             line_count += 1;
             temp_vars.clear();
             temp_skel.clear();
-            // Analisi sempre in Strict per decidere
-            parse_line_manual(line, ParsingMode::Strict, &mut temp_vars, &mut temp_skel);
+
+            // FIX FREEZE 1: Tronchiamo righe giganti nell'analisi per non perdere tempo
+            let line_sample = if line.len() > 16384 { &line[..16384] } else { line };
+
+            parse_line_manual(line_sample, ParsingMode::Strict, &mut temp_vars, &mut temp_skel);
             strict_templates.insert(temp_skel.clone());
         }
 
@@ -343,7 +362,6 @@ impl CASTCompressor {
     }
 
     pub fn compress(&mut self, input_data: &[u8]) -> (Vec<u8>, Vec<u8>, Vec<u8>, u8, String) {
-        // 1. Binary Check
         let sample_len = std::cmp::min(input_data.len(), 4096);
         let bad_chars = input_data[..sample_len].iter()
             .filter(|&&b| b < 32 && b != 9 && b != 10 && b != 13).count();
@@ -351,7 +369,6 @@ impl CASTCompressor {
              return self.create_passthrough(input_data, "Passthrough [Binary]");
         }
 
-        // 2. Decoding Logic
         let (text_cow, is_latin1) = match std::str::from_utf8(input_data) {
             Ok(s) => (Cow::Borrowed(s), false),
             Err(_) => {
@@ -362,29 +379,33 @@ impl CASTCompressor {
 
         let text_slice = text_cow.as_ref();
 
-        // Imposta la strategia (Parser Manuale)
+        // 1. Analyze
         self.analyze_strategy(text_slice);
 
-        let lines = text_slice.split_inclusive('\n');
-        let unique_limit = (text_slice.len() as f64 / 64.0 * if self.mode == ParsingMode::Aggressive { 0.40 } else { 0.25 }) as u32;
+        // FIX FREEZE 2: Conteggio REALE delle righe.
+        // Impedisce di creare 20M template su file minificati dove len()/64 sbagliava stima.
+        let line_count_real = text_slice.as_bytes().iter().filter(|&&b| b == b'\n').count() + 1;
+        let unique_limit = (line_count_real as f64 * if self.mode == ParsingMode::Aggressive { 0.40 } else { 0.25 }) as u32;
 
-        // 3. Processing Lines (Zero-Allocation Loop)
+        let lines = text_slice.split_inclusive('\n');
+
         let mut vars_cache: Vec<&str> = Vec::with_capacity(32);
         let mut skel_cache = String::with_capacity(512);
 
+        // 3. Processing Lines (MANUAL PARSER - FASTEST)
         for line in lines {
             if line.is_empty() { continue; }
 
             vars_cache.clear();
             skel_cache.clear();
 
-            // PARSER MANUALE (NO REGEX)
             parse_line_manual(line, self.mode, &mut vars_cache, &mut skel_cache);
 
             let t_id;
             if let Some(&id) = self.template_map.get(&skel_cache) {
                 t_id = id;
             } else {
+                // SAFETY VALVE (Corretto ora)
                 if self.next_template_id > unique_limit && self.next_template_id > 100 {
                     return self.create_passthrough(input_data, "Passthrough [Entropy]");
                 }
@@ -398,6 +419,7 @@ impl CASTCompressor {
             self.stream_template_ids.push(t_id);
             let cols = self.columns_storage.get_mut(&t_id).unwrap();
 
+            // Lazy creation: i buffer restano vuoti finché non servono (FIX RAM)
             if cols.is_empty() {
                 for _ in 0..vars_cache.len() {
                     cols.push(ColumnBuffer::new());
@@ -406,7 +428,6 @@ impl CASTCompressor {
 
             let limit = std::cmp::min(vars_cache.len(), cols.len());
             for i in 0..limit {
-                // PUSH OTTIMIZZATO SU BUFFER
                 cols[i].push(vars_cache[i]);
             }
         }
@@ -441,7 +462,7 @@ impl CASTCompressor {
             }
         }
 
-        // 5. Unified Remapping (Optimized)
+        // 5. Unified Remapping
         if decision_mode == "UNIFIED" {
             let mut counts = HashMap::new();
             let mut first_appearance = HashMap::new();
@@ -513,7 +534,6 @@ impl CASTCompressor {
         for t_id in 0..self.skeletons_list.len() {
             if let Some(cols) = self.columns_storage.get(&(t_id as u32)) {
                 for col_buf in cols {
-                    // ITERAZIONE OTTIMIZZATA
                     for idx in 0..col_buf.len() {
                         if idx > 0 { vars_buffer.extend_from_slice(row_sep); }
 
