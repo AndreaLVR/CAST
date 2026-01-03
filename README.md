@@ -99,15 +99,15 @@ The core premise of CAST is that structured text lines ($L$) can be decomposed i
 
 $$L \rightarrow S + V$$
 
-Unlike formats like Parquet which require a pre-defined schema, CAST infers this structure dynamically using an **Adaptive Regex Engine**.
+Unlike formats like Parquet which require a pre-defined schema, CAST infers this structure dynamically using an **Optimized Adaptive Parser**.
 
 ### The Pipeline
-1.  **Adaptive Parsing**: The algorithm analyzes a sample of the input stream to select the optimal parsing strategy (e.g., **Strict** for delimited formats like CSV/JSON, **Aggressive** for unstructured Logs) based on structural consistency.
+1.  **Adaptive Inference**: The algorithm analyzes a sample of the input stream to select the optimal parsing strategy (e.g., **Strict** for delimited formats like CSV/JSON, **Aggressive** for unstructured Logs) based on structural consistency.
 2.  **Decomposition**: Valid lines are stripped of their variable data. The static structure is stored once as a **Skeleton**, while dynamic values are extracted as **Variables**.
 3.  **Columnar Transposition**: Variable vectors are transposed from a row-oriented layout into contiguous column-oriented blocks.
 4.  **Entropy Reduction**: By grouping similar data types together (e.g., a continuous stream of timestamps or IP addresses), CAST maximizes **data locality**. This allows backend compressors (such as LZMA2, Zstd, or Brotli) to detect long-range repetitions that would be invisible in the raw row-based stream.
 
-> 📄 **Scientific Paper:** For a deep dive into the mathematical proofs, the "Binary Guard" logic, and the specific regex strategies used for "Structural Deduction", please refer to the **[CAST_Paper.pdf](./paper/CAST_Paper.pdf)** included in this repository.
+> 📄 **Scientific Paper:** For more details please refer to the **[CAST_Paper.pdf](./paper/CAST_Paper.pdf)** included in this repository.
 
 ---
 
