@@ -69,8 +69,8 @@ python cli.py -v archive.cast
 
 ## 📊 Usage: Benchmarks
 
-The `run_benchmarks.py` script is used to calculate the **Theoretical Maximum Compression Ratio** (Table 1 in the paper).
-It compares CAST against standard libraries using their maximum compression settings (LZMA Extreme, Zstd 22, Brotli 11).
+The `run_benchmarks.py` script is used to calculate the **Theoretical Maximum Compression Ratio**.
+It compares CAST against standard libraries using their maximum compression settings (LZMA Preset 9 Extreme, Zstd 22, Brotli 11).
 
 ### Syntax
 ```bash
