@@ -128,9 +128,9 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
 
 ### 2. 🐍 Python Implementation (Educational Reference)
 * **Goal:** **Algorithmic Readability & Logic Validation.**
-* **Method:** A simplified, monolithic implementation using Python's native libraries.
-* **Role:** Designed purely as a readable reference for researchers to understand the parsing logic without the complexity of low-level memory management.
-* **⚠️ Limitation:** Due to interpreter overhead and lack of low-level optimizations, this version is **not** intended for performance profiling and was **not** used for the official benchmarks.
+* **Method:** A high-level implementation relying on **Standard Regex** for pattern detection.
+* **Role:** Designed as a readable reference for researchers to understand the core decomposition logic. It prioritizes code clarity over raw execution speed.
+* **⚠️ Limitation:** Due to the overhead of the regex engine and the interpreter, this version is **not** intended for performance profiling and was **not** used for the official benchmarks.
 
 ---
 
