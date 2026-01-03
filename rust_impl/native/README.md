@@ -157,7 +157,7 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with all
 ```
 
 **2. Chunked Comparison (e.g., 100MB blocks):**
-Fair comparison for block-based compression or low-memory scenarios. Resets dictionary every 100MB for all competitors.
+Fair comparison for block-based compression or low-memory scenarios. Resets dictionary every 100MB for CAST.
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with all --chunk-size 100MB
 ```
