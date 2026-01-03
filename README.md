@@ -27,7 +27,7 @@ This repository contains the source code and benchmarking tools used to produce 
 
 ## ⚡ Key Features
 
-* 🧠 **Schema-less Inference**: Uses **Adaptive Regex Inference** to automatically detect structure in CSV, XML, JSON, Log files, and, more generally, structured content files **without user-defined schemas**.
+* 🧠 **Schema-less Inference**: Uses an **Optimized Adaptive Parser** (zero-allocation) to automatically detect repetitive patterns in **any structured text stream**, operating purely on syntax without relying on file extensions or predefined schemas.
 * 📦 **Enhanced Density**: Reduces structural entropy, allowing standard compressors (LZMA2, Zstd, Brotli, etc) to achieve significantly higher compression ratios **on structured texts**.
 * 🚀 **Throughput Efficiency**: For **highly structured inputs**, the reduced entropy of the columnar streams lowers the backend encoding cost, often resulting in a net reduction of total execution time despite the parsing overhead.
 * 🛡️ **Robustness**: Includes a **Binary Guard** heuristic to automatically detect and passthrough non-structured or binary files, preventing data corruption or inefficiency.
@@ -36,27 +36,36 @@ This repository contains the source code and benchmarking tools used to produce 
 
 ## 📊 Benchmarks & Performance Evaluation
 
-To provide a comprehensive evaluation, this project features **distinct implementations** designed to validate different aspects of the algorithm:
+> **ℹ️ Note on Backend:** While the CAST algorithm is fundamentally backend-agnostic (compatible with LZMA, Zstd, Brotli, etc.), the implementations provided in this repository are specifically tuned to leverage **LZMA2** as the reference backend to demonstrate maximum compression density.
 
-1.  **🐍 Python Reference:** Single-threaded, optimized purely for **Maximum Compression Ratio** to validate the mathematical model (Theoretical Limit).
-2.  **🦀 Rust Performance Engine:** Multi-threaded, optimized for **Production Throughput** and Scalability.
-    * *Backend A (7-Zip-linked):* Leverages the external 7-Zip executable for maximum encoding speed.
-    * *Backend B (Native):* A standalone, dependency-free implementation.
+To provide a comprehensive evaluation, this project features **two distinct implementations**:
+
+1.  **🦀 Rust Performance Engine:** The core implementation used for **ALL official benchmarks**.
+    * *Native Mode:* Standalone, dependency-free. Used to measure **Algorithmic Efficiency (Compression Ratio)** without external overhead.
+    * *System Mode (7-Zip Backend):* Pipes data to the external 7-Zip executable (LZMA2). Used to demonstrate **Production Throughput** and scalability in real-world pipelines.
+2.  **🐍 Python Reference:** A **simplified** implementation provided solely for **educational purposes** and algorithmic readability. **It was NOT used for any benchmark results presented in the paper.**
 
 > 📂 **Data Sources:** Benchmarks were performed on real-world datasets sourced from Kaggle and Open Data repositories. For a full list of source URLs and descriptions, please refer to [DATASETS.md](./DATASETS.md).
 
 > **⚠️ Note on Benchmarking Methodology:**
 >
-> 1.  **Python Results (Table 1):** Represent the theoretical maximum compression density. Timings include interpreter overhead and are not indicative of production performance.
-> 2.  **Rust Results (Table 2):** Demonstrate the **production speed** and viability.
->     * To isolate the impact of the CAST algorithm, we compare **CAST (Rust+7-Zip)** directly against **LZMA2 (7-Zip)**. This ensures a fair comparison where both pipelines use the exact same backend encoder, with the only variable being the structural pre-processing.
+> 1.  **Compression Ratio (Table 1):** Measured using **Rust Native** to strictly isolate the algorithmic efficiency of the structural transformation.
+> 2.  **Throughput & Speedup (Table 2):** Evaluates the **CAST Pipeline (using 7-Zip)** against the **Standard 7-Zip Baseline**.
+>     * This ensures a strictly fair comparison: both pipelines use the **exact same backend encoder binary** (7-Zip/LZMA2) and threading model. The observed speedup is attributable solely to the entropy reduction achieved by CAST's pre-processing.
 
-### 1. Compression Density (Python Reference)
+### 1. Algorithmic Efficiency (Compression Ratio)
 *Objective: Validate the mathematical efficiency of the structural transformation.*
 
-The table below compares CAST against state-of-the-art compressors (LZMA2, Zstd, Brotli) at their maximum settings. As shown, CAST consistently achieves superior density on structured inputs.
+The table below compares **CAST (Rust Native)** against state-of-the-art compressors at their maximum settings. As shown, CAST consistently achieves superior density on structured inputs.
 
-![Python Reference Benchmarks](paper/python_benchmarks.PNG)
+> **⚖️ Fair Comparison Methodology:**
+> To ensure a strictly fair comparison, all tests in this section were restricted to **single-threaded, monolithic execution** (loading the full dataset into memory), effectively isolating pure algorithmic efficiency from parallelization gains.
+> * **LZMA2 Parity:** The exact same configuration (Preset 9 Extreme, 128 MB Dictionary) was used for both the standalone LZMA2 competitor and the CAST backend.
+> * **Competitor Settings:** Zstd and Brotli were configured to their maximum compression levels (Level 22 and Quality 11, respectively).
+>
+> *Please refer to the full paper for detailed configuration parameters.*
+
+![Compression Ratio Benchmarks](paper/ratio_benchmarks.PNG)
 
 > *(See `paper/CAST_Paper.pdf` for high-resolution data)*
 
