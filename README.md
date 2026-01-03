@@ -115,22 +115,22 @@ Unlike formats like Parquet which require a pre-defined schema, CAST infers this
 
 This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate the efficacy of the CAST algorithm. It provides two distinct implementations, each with a specific research goal:
 
-### 1. 🐍 Python Implementation (The Reference)
-* **Goal:** Maximum Compression Density & Algorithmic Baseline.
-* **Method:** A simplified, monolithic implementation using Python's native `lzma`. It processes the file as a single block to maximize the global deduplication context.
-* **Pros:** Achieves the theoretical maximum compression ratio and serves as a readable baseline for understanding the algorithm's logic.
-* **Cons:** Slower due to interpreter overhead and limited by available physical RAM (no chunking).
-
-### 2. 🦀 Rust Implementation (The Performance Prototype)
-* **Goal:** High-Throughput Demonstration & Scalability.
-* **Method:** A performance-oriented **research prototype**. Unlike the Python reference, this version introduces **Multithreading** and **Stream Chunking** to demonstrate that the algorithm *can* scale to gigabyte-sized files without memory exhaustion.
-* **Backends:**
-    * **7-Zip Backend:** Invokes the external `7-Zip` CLI. Selected to demonstrate the maximum throughput potential when paired with a mature LZMA encoder.
-    * **Native Backend:** A standalone implementation using pure Rust crates.
+### 1. 🦀 Rust Implementation (The Benchmark Engine)
+* **Goal:** **High-Performance, Density & Scalability.**
+* **Method:** A performance-oriented **research prototype** featuring **Zero-Copy Parsing**, **Multithreading**, and **Stream Chunking** to handle gigabyte-sized files with constant memory footprint.
+* **Modes:**
+    * **Native Mode:** Standalone implementation. Used to validate the **Algorithmic Efficiency (Maximum Density)** presented in Table 1.
+    * **System Mode (7-Zip):** Invokes the external `7-Zip` CLI. Used to validate **Production Throughput** presented in Table 2.
 * **Pros:**
     * **Speed:** significantly faster on complex datasets, leveraging Rust's zero-cost abstractions.
     * **Scalability:** The `--chunk-size` feature guarantees a constant low-memory footprint, preventing OS swapping.
-* **⚠️ Maturity Note:** While optimized for speed, this is **experimental code**. It lacks the extensive error handling, fuzz-testing, and security auditing required for a production-grade compression tool. It is intended to benchmark the *algorithm*, not to replace tools like `xz` or `zstd` in critical environments.
+* **⚠️ Maturity Note:** While quite optimized and functional, this is **experimental code**. It lacks the extensive error handling, fuzz-testing, and security auditing required for a production-grade compression tool. It is intended to benchmark the *algorithm*, not to replace tools like `xz` or `zstd` in critical environments.
+
+### 2. 🐍 Python Implementation (Educational Reference)
+* **Goal:** **Algorithmic Readability & Logic Validation.**
+* **Method:** A simplified, monolithic implementation using Python's native libraries.
+* **Role:** Designed purely as a readable reference for researchers to understand the parsing logic without the complexity of low-level memory management.
+* **⚠️ Limitation:** Due to interpreter overhead and lack of low-level optimizations, this version is **not** intended for performance profiling and was **not** used for the official benchmarks.
 
 ---
 
