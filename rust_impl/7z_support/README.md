@@ -1,4 +1,4 @@
-# CAST: Columnar Agnostic Structural Transformation (Rust + 7z Backend)
+# CAST: Columnar Agnostic Structural Transformation (Rust + 7-Zip Backend)
 
 A high-performance Rust implementation of the CAST (Columnar Agnostic Structural Transformation) algorithm.
 This project uses a hybrid compression strategy (Template/Dictionary + LZMA2) relying on an **external 7-Zip executable** for the heavy lifting. This approach ensures maximum performance and compatibility without complex build dependencies.
@@ -8,7 +8,7 @@ It includes a comprehensive **Benchmark Suite** to compare performance against i
 ## 📂 Project Structure
 
 * **`src/lib.rs`**: Library entry point.
-* **`src/cast.rs`**: Core logic (CAST/GTF Algorithm + 7z wrapper).
+* **`src/cast.rs`**: Core logic (CAST/GTF Algorithm + 7-Zip wrapper).
 * **`src/main.rs`**: CLI Entry point (Compress/Decompress/Verify).
 * **`src/bin/run_benchmarks.rs`**: Advanced Benchmarking Suite.
 
@@ -147,6 +147,7 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd, brotli
 ```
+
 
 
 
