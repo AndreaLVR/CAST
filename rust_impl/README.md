@@ -7,7 +7,7 @@
 > **💡 Key Performance Metric:** Regardless of the implementation chosen (System or Native), the critical metric to observe is the **Simultaneous Enhancement**.
 >
 > On structured datasets CAST often breaks the traditional compression trade-off by delivering a **Dual Advantage**:
-> 1.  **Superior Density:** It consistently produces smaller files than standard LZMA2.
+> 1.  **Superior Density:** It often produces smaller files than standard LZMA2.
 > 2.  **Faster Encoding:** It significantly reduces processing time by simplifying the data stream *before* the backend encoder sees it.
 >
 > **The goal is to demonstrate that structural pre-processing can improve BOTH speed and ratio simultaneously, rather than sacrificing one for the other.**
