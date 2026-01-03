@@ -145,8 +145,9 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd
 
 **4. Multiple Specific Competitors Comparison:**
 ```powershell
-cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd, brotli
+cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd,brotli
 ```
+
 
 
 
