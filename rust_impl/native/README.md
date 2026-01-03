@@ -1,21 +1,28 @@
-# CAST: Columnar Agnostic Structural Transformation (Rust Port with Native libs)
+# CAST: Rust Implementation (Native Mode)
 
-A Rust port of the CAST (Columnar Agnostic Structural Transformation) algorithm.
-This project implements a hybrid compression strategy (Template/Dictionary + LZMA2) offering two distinct operating modes: **Solid** (Single thread, Maximum Compression) and **Multithread** (Maximum Speed).
+A standalone Rust port of the CAST algorithm.
 
-It also includes a comprehensive **Benchmark Suite** to compare performance against industry standards (LZMA2, Brotli, Zstd).
+Unlike the "System Mode" variant (which pipes data to 7-Zip), this version links directly against native compression libraries (via `liblzma`). It offers two distinct operating modes:
+1.  **Solid Mode:** Single-threaded, maximizes global deduplication (Best Compression Ratio).
+2.  **Multithread Mode:** Parallel execution for higher throughput (Best Speed).
+
+It includes a comprehensive **Benchmark Suite** to compare performance against industry standards (LZMA2, Brotli, Zstd).
 
 ## 📂 Project Structure
 
 * **`src/lib.rs`**: Library entry point.
-* **`src/cast.rs`**: Core logic (CAST/GTF Algorithm).
+* **`src/cast.rs`**: Algorithm Core logic.
 * **`src/main.rs`**: CLI Entry point (Compress/Decompress/Verify).
 * **`src/bin/run_benchmarks.rs`**: Advanced Benchmarking Suite.
 
-## 🛠️ Prerequisites
+---
+
+## 🛠️ Prerequisites (Build Time Only)
+
+Since this implementation links against C libraries, you need to provide the development headers during the build process.
 
 ### Windows (Static Setup)
-To build this project on Windows, you need **vcpkg** to obtain the static version of `liblzma`.
+To build a portable `.exe` that doesn't depend on DLLs, you need **vcpkg** to obtain the static version of `liblzma`.
 
 1.  **Download and Install vcpkg:**
     Open PowerShell (as Administrator) and run:
@@ -31,7 +38,7 @@ To build this project on Windows, you need **vcpkg** to obtain the static versio
     ```
 
 3.  **Configure Environment:**
-    Tell Cargo where vcpkg is located (replace path with yours).
+    Tell Cargo where vcpkg is located (replace path with your actual installation path).
 
     **PowerShell:**
     ```powershell
@@ -64,6 +71,8 @@ The binary will be located at:
 * **Windows:** `target/release/cast.exe`
 * **Linux:** `target/release/cast`
 
+**Note:** Once built, this binary is standalone. It does NOT require `vcpkg` or `7z` to run on the target machine.
+
 ---
 
 ## 📦 CLI Usage (User Tool)
@@ -77,13 +86,13 @@ cargo run --release -- -c <input_file> <output_file> [options]
 ```
 
 **Options:**
-* `--multithread`: Uses all CPU cores. Faster, but slightly lower compression ratio.
+* `--multithread`: Uses all CPU cores. Significantly faster, but may result in a slightly lower compression ratio due to context splitting.
 * `--chunk-size <SIZE>`: **RAM Saver.** Splits the input into chunks of the specified size (e.g., `100MB`, `1GB`, `500KB`). Critical for processing huge files larger than available RAM.
 * `-v` or `--verify`: **Security Check.** Immediately verifies the created archive after compression. Recommended for backups.
 
 **Examples:**
 ```powershell
-# Standard Compression (Fastest)
+# Standard Compression (Best Ratio, Single Thread)
 cargo run --release -- -c "data.csv" "archive.cast"
 
 # Compression + Verification (Safest)
@@ -93,7 +102,7 @@ cargo run --release -- -c "data.csv" "archive.cast" -v
 cargo run --release -- -c "huge_dataset.csv" "archive.cast" --chunk-size 500MB
 
 # Max Speed + Chunking + Verification
-cargo run --release -- -c "huge.csv" "archive.cast" --multithread --chunk-size "1 GB" -v
+cargo run --release -- -c "huge.csv" "archive.cast" --multithread --chunk-size "1GB" -v
 ```
 
 ### 2. Decompression
@@ -114,7 +123,8 @@ cargo run --release -- -v "archive.cast"
 
 ## 📊 Benchmark Suite
 
-The benchmarking tool (`src/bin/run_benchmarks.rs`) compares CAST against **LZMA2**, **Brotli**, and **Zstd** (all set to maximum compression settings).
+The benchmarking tool (`src/bin/run_benchmarks.rs`) compares CAST against **LZMA2**, **Brotli**, and **Zstd**.
+All algorithms are configured to run at **Maximum Compression** settings (unless restricted by RAM options).
 
 **Note:** The `--list` and `--compare-with` arguments are **mandatory**.
 
@@ -141,7 +151,7 @@ D:\Logs\server_dump.log
 ### Examples
 
 **1. Full Comparison (Global/Solid Mode):**
-Best for maximum compression ratio (uses all RAM).
+Best for measuring maximum compression ratio (uses all RAM).
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with all
 ```
@@ -158,6 +168,7 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd
 ```
 
 **4. Multiple Specific Competitors Comparison:**
+*(Note: use comma without spaces to ensure correct parsing)*
 ```powershell
-cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd, brotli
+cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd,brotli
 ```
