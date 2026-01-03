@@ -56,7 +56,7 @@ To provide a comprehensive evaluation, this project features **two distinct impl
 ### 1. Algorithmic Efficiency (Compression Ratio)
 *Objective: Validate the mathematical efficiency of the structural transformation.*
 
-The table below compares **CAST (Rust Native)** against state-of-the-art compressors at their maximum settings. As shown, CAST consistently achieves superior density on structured inputs, often delivering significantly faster encoding times due to reduced backend complexity.
+The table below compares **CAST (Rust Native)** against state-of-the-art compressors at their maximum settings. As shown, CAST demonstrates superior density on structured inputs, often delivering significantly faster encoding times due to reduced backend complexity.
 > **⚖️ Fair Comparison Methodology:**
 > To ensure a strictly fair comparison, all tests in this section were restricted to **single-threaded, monolithic execution** (loading the full dataset into memory), effectively isolating pure algorithmic efficiency from parallelization gains.
 > * **LZMA2 Parity:** The exact same configuration (Preset 9 Extreme, 128 MB Dictionary) was used for both the standalone LZMA2 competitor and the CAST backend.
