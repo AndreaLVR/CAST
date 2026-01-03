@@ -2,14 +2,17 @@
 
 > ⚠️ **Disclaimer: Proof of Concept & Performance Focus**
 >
-> Please note that both implementations provided here are intended as **Proof of Concepts (PoC)**. Neither version is designed for critical production environments.
+> Please note that both implementations provided here are intended as **Scientific Proof of Concepts (PoC)**. Neither version is fully hardened for critical production environments.
 >
-> **💡 Key Performance Metric:** Regardless of the implementation chosen (7z or Native), the critical metric to observe is the **Time-to-Compression-Ratio balance**.
-> CAST aims for a unique "sweet spot": it often achieves **LZMA-like ratios in significantly less time**, or outperforms faster algorithms (like Zstd) in ratio while maintaining acceptable performance.
+> **💡 Key Performance Metric:** Regardless of the implementation chosen (System or Native), the critical metric to observe is the **Simultaneous Enhancement**.
 >
-> **The goal is to demonstrate a superior trade-off compared to standard algorithms, rather than just winning on a single metric.**
+> On structured datasets CAST often breaks the traditional compression trade-off by delivering a **Dual Advantage**:
+> 1.  **Superior Density:** It consistently produces smaller files than standard LZMA2.
+> 2.  **Faster Encoding:** It significantly reduces processing time by simplifying the data stream *before* the backend encoder sees it.
+>
+> **The goal is to demonstrate that structural pre-processing can improve BOTH speed and ratio simultaneously, rather than sacrificing one for the other.**
 
-This directory contains the high-performance Rust ports of the CAST (Columnar Agnostic Structural Transformation) algorithm.
+This directory contains the high-performance Rust ports of the CAST algorithm.
 
 To serve different deployment needs, the implementation is split into two distinct variants. Please choose the one that best fits your environment.
 
@@ -17,32 +20,34 @@ To serve different deployment needs, the implementation is split into two distin
 
 ## 📂 Available Variants
 
-### 1. [7z Backend Support](./7z_support) (Recommended)
+### 1. [System Mode (7-Zip Backend)](./7z_support)
 > **Path:** `./7z_support/`
+> **Recommended for:** Benchmarking, High Throughput, Heavy Workloads.
 
-This version acts as a smart wrapper around the external **7-Zip executable**.
-* **Pros:** Great compression performance (slightly worse than the native version), utilizes 7-Zip's highly optimized multi-threading, **extremely faster than the native version**.
-* **Cons:** Requires 7-Zip to be installed on the host machine and accessible via PATH or environment variable (explained in 7z_support/README.md).
-* **Best for:** Benchmarking, local heavy-duty compression, environments where installing 7z is allowed.
+This version acts as a smart wrapper (pipe) around the external **7-Zip executable**.
+* **Pros:** **Significantly faster** than the native version. It leverages the highly optimized, multi-threaded C++ engine of 7-Zip/LZMA2.
+* **Cons:** Slightly higher overhead for very small files due to process spawning; requires `7z` to be installed on the host machine.
+* **Trade-off:** Prioritizes **speed** over absolute minimal file size (due to 7z container framing).
 
-### 2. [Native Implementation](./native)
+### 2. [Native Mode (Standalone)](./native)
 > **Path:** `./native/`
+> **Recommended for:** Distribution, Maximum Compression Density.
 
 This version uses Rust crates (`xz2`, `lzma-rs`, etc.) to handle compression internally without calling external processes.
-* **Pros:** Completely self-contained binary (no external dependencies required at runtime), cleaner distribution.
-* **Cons:** Slightly better compression ratio but lower speed compared to the optimized 7z CLI; build process requires standard C build tools.
-* **Best for:** Standalone tools, distribution to end-users, environments where external binaries cannot be called.
+* **Pros:** **Completely self-contained binary**. No external dependencies required at runtime; cleaner distribution.
+* **Cons:** Slower than the external 7-Zip engine; build process requires standard C build tools (links against `liblzma`).
+* **Trade-off:** Prioritizes **maximum compression ratio** (Algorithmic Efficiency) over raw throughput.
 
 ---
 
 ## ⚡ Quick Comparison
 
-| Feature | 7z Support (`./7z_support`) | Native (`./native`) |
+| Feature | System Mode (`./7z_support`) | Native Mode (`./native`) |
 | :--- | :---: | :---: |
-| **Runtime Dependency** | Requires `7z` executable | None (Standalone) |
-| **Compressio Ratio** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| **Performance** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
-| **Multi-threading** | Managed by 7z (Auto) | Managed by Rust |
+| **Runtime Dependency** | Requires `7-Zip` executable | None (Standalone) |
+| **Compression Ratio** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| **Throughput (Speed)** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **Multi-threading** | Managed by 7-Zip (Optimized) | Managed by Rust |
 | **Build Complexity** | Very Low | Low/Medium |
 
 ---
@@ -52,8 +57,8 @@ This version uses Rust crates (`xz2`, `lzma-rs`, etc.) to handle compression int
 Navigate to the folder of your choice to see specific build and usage instructions:
 
 ```bash
-# For the 7z-based version
+# For the High-Throughput version
 cd 7z_support
 
-# For the Native version
+# For the Standalone version
 cd native
