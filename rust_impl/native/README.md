@@ -137,7 +137,7 @@ cargo run --release --bin run_benchmarks -- --list <file_list.txt> --compare-wit
 * `--list <path>`: Path to a text file containing the list of files to test (one path per line).
 * `--compare-with <algos>`: Comma-separated list of algorithms to test against: `lzma2`, `brotli`, `zstd`, or `all`.
 * `--multithread`: Enables multithreading for CAST, LZMA2, and Zstd tests.
-* `--chunk-size <SIZE>`: Forces a chunk-based compression for ALL algorithms (CAST and competitors) to simulate memory-constrained environments or block-based storage.
+* `--chunk-size <SIZE>`: Forces a chunk-based compression for CAST to simulate memory-constrained environments or block-based storage.
 
 ### How to prepare the file list
 Create a text file (e.g., `files.txt`) with absolute or relative paths:
