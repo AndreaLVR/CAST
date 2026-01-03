@@ -52,11 +52,12 @@ To provide a comprehensive evaluation, this project features **two distinct impl
 > 1.  **Compression Ratio (Table 1):** Measured using **Rust Native** to strictly isolate the algorithmic efficiency of the structural transformation.
 > 2.  **Throughput & Speedup (Table 2):** Evaluates the **CAST Pipeline (using 7-Zip)** against the **Standard 7-Zip Baseline**.
 >     * This ensures a strictly fair comparison: both pipelines use the **exact same backend encoder binary** (7-Zip/LZMA2) and threading model. The observed speedup is attributable solely to the entropy reduction achieved by CAST's pre-processing.
+>     * **Extended Dataset:** This suite includes **additional large-scale datasets** (e.g., >500 MB) tested exclusively in this mode to demonstrate the pipeline's scalability under heavy load conditions.
 
 ### 1. Algorithmic Efficiency (Compression Ratio)
 *Objective: Validate the mathematical efficiency of the structural transformation.*
 
-The table below compares **CAST (Rust Native)** against state-of-the-art compressors at their maximum settings. As shown, CAST demonstrates superior density on structured inputs, often delivering significantly faster encoding times due to reduced backend complexity.
+The table below compares **CAST (Rust Native)** against state-of-the-art compressors at their maximum settings. As shown, CAST demonstrates superior density **on structured inputs**, often delivering significantly faster encoding times due to reduced backend complexity.<br> **Conversely, on unstructured or high-entropy data where no clear pattern can be inferred, the algorithm automatically falls back to standard compression, yielding neutral or slightly worse results.**
 > **⚖️ Fair Comparison Methodology:**
 > To ensure a strictly fair comparison, all tests in this section were restricted to **single-threaded, monolithic execution** (loading the full dataset into memory), effectively isolating pure algorithmic efficiency from parallelization gains.
 > * **LZMA2 Parity:** The exact same configuration (Preset 9 Extreme, 128 MB Dictionary) was used for both the standalone LZMA2 competitor and the CAST backend.
@@ -68,21 +69,27 @@ The table below compares **CAST (Rust Native)** against state-of-the-art compres
 
 > *(See `paper/CAST_Paper.pdf` for high-resolution data)*
 
-### 2. Throughput & Latency (Rust Implementation)
+### 2. Production Throughput & Speedup (Rust System Mode)
 *Objective: Evaluate viability in high-performance pipelines.*
 
-Here we measure the "Time-to-Compression" trade-off.
-**Key Finding:** For highly structured datasets, CAST is often **faster** than running standard compression directly. The time saved by the backend encoder (processing optimized, low-entropy streams) outweighs the parsing overhead.
+Here we measure the real-world "Time-to-Compression" trade-off.
+
+**Key Finding:** Contrary to the expectation that pre-processing adds latency, CAST is often **faster** than running standard compression directly on highly structured datasets. The entropy reduction allows the backend encoder to process the stream so efficiently that the **time saved during encoding outweighs the parsing overhead**.
 
 ![Rust Performance Benchmarks](paper/rust_7zip_benchmarks.PNG)
 
-### 3. Decompression Overhead (Rust Implementation)
+> *(See `paper/CAST_Paper.pdf` for high-resolution data)*
+
+### 3. Decompression Overhead (Rust Implementations)
 *Objective: Quantify the cost of structural reconstruction.*
 
 Decompression involves decoding the columnar streams and re-assembling the original row-oriented layout ($S + V \rightarrow L$). The data below measures the **full restoration time** required by the CAST engine.
-**Observation:** While the reconstruction process involves computational overhead to re-serialize the structure, the resulting throughput remains within practical limits for archival retrieval and cold storage use cases.
+
+**Observation:** The reconstruction phase is strictly linear (O(N)). Thanks to the optimized architecture of the Rust engine, the re-serialization overhead is minimized, ensuring high throughput.
 
 ![Decompression Benchmarks](paper/decompression_benchmarks.PNG)
+
+> *(See `paper/CAST_Paper.pdf` for high-resolution data)*
 
 ---
 
