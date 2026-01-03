@@ -139,7 +139,7 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
 Since this project offers multiple implementations, detailed usage instructions, dependencies, and build commands are provided in the respective directories:
 
 * **📂 [Rust Implementation](./rust_impl/)**: Refer to the inner README to choose between the **7-Zip Backend** or **Native** version and for compilation steps.
-* * **📂 [Python Implementation](./python_impl/)**: Follow the instructions in the inner README to run the reference scripts.
+* **📂 [Python Implementation](./python_impl/)**: Follow the instructions in the inner README to run the reference scripts.
 
 ---
 
