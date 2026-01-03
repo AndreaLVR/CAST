@@ -12,7 +12,7 @@
 ## 📂 Project Structure
 
 * **`cast.py`**: The core library containing the `CAST` class, the `Skeleton` logic, and the standard Regex patterns used for parsing.
-* **`cli.py`**: A simple Command Line Interface to compress and decompress files.
+* **`cli.py`**: A simple Command Line Interface to compress, decompress and verify files.
 * **`run_benchmarks.py`**: A script to validate the compression ratio against Python's native `lzma`, `zstd`, and `brotli` libraries.
 * **`requirements.txt`**: List of dependencies (mainly for benchmarking).
 
