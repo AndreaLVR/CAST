@@ -25,7 +25,7 @@ Since this implementation links against C libraries, you need to provide the dev
 To build a portable `.exe` that doesn't depend on DLLs, you need **vcpkg** to obtain the static version of `liblzma`.
 
 1.  **Download and Install vcpkg:**
-    Open PowerShell (as Administrator) and run:
+    Open PowerShell or Command Prompt (as Administrator) and run:
     ```powershell
     git clone [https://github.com/microsoft/vcpkg.git](https://github.com/microsoft/vcpkg.git)
     cd vcpkg
