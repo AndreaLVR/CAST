@@ -7,11 +7,11 @@ title: "CAST: Columnar Agnostic Structural Transformation"
 version: 0.1.0
 date-released: 2025-12-24
 url: "https://github.com/AndreaLVR/CAST"
-abstract: "An agnostic algorithm that transcends standard compression limits by neutralizing structural entropy and re-engineering layouts for superior ratios and speed on structured data."
+abstract: "A Schema-less Structural Preprocessing Algorithm for Improving General-Purpose Compression on Structured Data."
 preferred-citation:
   type: generic
   authors:
   - family-names: "Olivari"
     given-names: "Andrea"
-  title: "CAST: A High-Performance Structural Restructuring Algorithm for Optimized Data Compression"
+  title: "CAST: A Schema-less Structural Preprocessing Algorithm for Improving General-Purpose Compression on Structured Data."
   year: 2025
