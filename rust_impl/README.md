@@ -26,8 +26,8 @@ To serve different deployment needs, the implementation is split into two distin
 
 This version acts as a smart wrapper (pipe) around the external **7-Zip executable**.
 * **Pros:** **Significantly faster** than the native version. It leverages the highly optimized, multi-threaded C++ engine of 7-Zip/LZMA2.
-* **Cons:** Slightly higher overhead for very small files due to process spawning; requires `7z` to be installed on the host machine.
-* **Trade-off:** Prioritizes **speed** over absolute minimal file size (due to 7z container framing).
+* **Cons:** Slightly higher overhead for very small files due to process spawning; requires `7-Zip` to be installed on the host machine.
+* **Trade-off:** Prioritizes **speed** over absolute minimal file size (due to 7-Zip container framing).
 
 ### 2. [Native Mode (Standalone)](./native)
 > **Path:** `./native/`
