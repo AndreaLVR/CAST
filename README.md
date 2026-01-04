@@ -38,16 +38,11 @@ This repository contains the source code and benchmarking tools used to produce 
 
 > **ℹ️ Note on Backend:** While the CAST algorithm is fundamentally backend-agnostic (compatible with LZMA, Zstd, Brotli, etc.), the implementations provided in this repository are specifically tuned to leverage **LZMA2** as the reference backend to demonstrate maximum compression density.
 
-To provide a comprehensive evaluation, this project features **two distinct implementations**:
+To provide a comprehensive evaluation, this project features **two distinct Rust implementations**:
 
 1.  **🦀 Rust Performance Engine:** The core implementation used for **ALL official benchmarks**.
     * *Native Mode:* Standalone, dependency-free. Used to measure **Algorithmic Efficiency (Compression Ratio)** without external overhead.
     * *System Mode (7-Zip Backend):* Pipes data to the external 7-Zip executable (LZMA2). Used to demonstrate **Production Throughput** and scalability in real-world pipelines.
-2.  **🐍 Python Reference:** Designed for **algorithmic readability** and logic verification.
-    * **Architecture:** Mirrors the Rust structure with **Native** (Pure Python) and **System** (7-Zip Backend) variants.
-    * **Threading:** The *Native* variant is **single-threaded** (bound by the GIL), while the *System* variant achieves **multi-threading** by offloading compression to the external 7-Zip process.
-    * **Parsing Strategy:** Uses compiled **Regex** for tokenization (unlike Rust's zero-copy byte scanner) to mitigate the overhead of Python's interpreter loops.
-    * *Note:* While fully functional (including chunking), it was **NOT** used for the performance timings presented in the paper.
 
 > 📂 **Data Sources:** Benchmarks were performed on real-world datasets sourced from Kaggle and Open Data repositories. For a full list of source URLs and descriptions, please refer to [DATASETS.md](./DATASETS.md).
 
@@ -132,9 +127,12 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
 
 ### 2. 🐍 Python Implementation (Educational Reference)
 * **Goal:** **Algorithmic Readability & Logic Validation.**
-* **Method:** A high-level implementation relying on **Standard Regex** for pattern detection.
-* **Role:** Designed as a readable reference for researchers to understand the core decomposition logic. It prioritizes code clarity over raw execution speed.
-* **⚠️ Limitation:** Due to the overhead of the regex engine and the interpreter, this version is **not** intended for performance profiling and was **not** used for the official benchmarks.
+* **Architecture:** Split into two variants to mirror the Rust structure:
+    * **Native Mode:** Pure Python, single-threaded (bound by GIL).
+    * **System Mode:** Multi-threaded via 7-Zip backend.
+* **Method:** A high-level implementation relying on **Standard Regex** for pattern detection, chosen for code clarity over the zero-copy byte parsing used in Rust.
+* **Role:** Designed as a readable reference for researchers to understand the core decomposition logic. It fully supports **Chunking** for large file processing via CLI.
+* **⚠️ Limitation:** Due to the overhead of the regex engine and the interpreter, this version is **not** intended for performance profiling and was **not** used for the official benchmarks presented in the paper.
 
 ---
 
