@@ -1,128 +1,94 @@
-# CAST: Python Reference Implementation
+# CAST: Python Reference Implementations
 
 > ⚠️ **Educational Purpose Only**
 >
-> This implementation is designed as a **Readable Reference** to understand the CAST algorithm's logic, data structures (`Skeleton` + `Variables`), and serialization format.
+> These implementations are designed as **Readable References** to understand the CAST algorithm's logic, data structures (`Skeleton` + `Variables`), and serialization format.
 >
-> **It is NOT intended for production or performance profiling.**
-> * **Single-Threaded:** It runs on a single core.
-> * **Memory Bound:** It loads the entire dataset into memory (Monolithic processing). It **does not support chunking**. Do not attempt to process files larger than your available physical RAM.
-> * **Regex-Based:** It uses standard Python `re` module, which is significantly slower than the custom byte-level parser used in the Rust implementation.
+> While less performant than the [Rust Implementation](../rust_impl), the Python version is **feature-complete**:
+> * **Chunking Support:**
+>   * **CLI Tool:** Implements **true streaming** (low memory footprint), enabling processing of files larger than physical RAM.
+>   * **Benchmark Tool:** Uses **simulated chunking** (loads full file) to measure pure algorithmic efficiency while maintaining a fair comparison environment against memory-bound competitors.
+> * **Dual Mode:** Offers both a pure-Python implementation and a high-performance wrapper around 7-Zip.
 
 ## 📂 Project Structure
 
-* **`cast.py`**: The core library containing the `CAST` class, the `Skeleton` logic, and the standard Regex patterns used for parsing.
-* **`cli.py`**: A simple Command Line Interface to compress, decompress, and verify files.
-* **`run_benchmarks.py`**: A script to validate the compression ratio against Python's native `lzma`, `zstd`, and `brotli` libraries.
-* **`requirements.txt`**: List of dependencies (mainly for benchmarking).
+To mirror the Rust architecture, the Python implementation is split into two variants:
+
+### 1. [System Mode (7z Backend)](./7z_support)
+> **Path:** `./7z_support/`
+
+This version implements the CAST logic in Python but delegates the heavy compression work to an external **7-Zip executable** via pipes.
+* **Pros:** Significantly faster (multithreaded backend), better compression ratios (uses LZMA2 Ultra).
+* **Cons:** Requires `7z` installed on the system.
+* **Best for:** Rapid prototyping, testing on large files where pure Python is too slow.
+
+### 2. [Native Mode (Pure Python)](./native)
+> **Path:** `./native/`
+
+The strict reference implementation using only Python's standard library modules (`lzma`, `re`, `struct`).
+* **Pros:** No external dependencies (works out-of-the-box).
+* **Cons:** Slower (Single-threaded), limited by the Python Global Interpreter Lock (GIL).
+* **Best for:** Studying the algorithm, debugging, ensuring bit-perfect reproducibility without external factors.
 
 ---
 
-## ⚙️ Setup
+## ⚡ Quick Comparison
 
-Ensure you have **Python 3.10+** installed.
-
-1.  **Install Dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-
----
-
-## 📦 Usage: CLI Tool
-
-The `cli.py` script allows you to test the algorithm on single files manually.
-
-### Syntax
-```bash
-python cli.py <mode> <input_file> <output_file> [options]
-```
-
-### Modes
-* `-c` : **Compress**. Reads input, compresses to `.cast`, and optionally verifies.
-* `-d` : **Decompress**. Restores the original file.
-* `-v` : **Verify Only**. Checks integrity without writing to disk.
-
-### Examples
-
-**1. Compress a file (Standard):**
-```bash
-python cli.py -c data.csv archive.cast
-```
-
-**2. Compress with Immediate Verification (Recommended):**
-```bash
-python cli.py -c data.csv archive.cast -v
-```
-
-**3. Decompress and restore:**
-```bash
-python cli.py -d archive.cast restored.csv
-```
-
-**4. Check archive integrity (No extraction):**
-```bash
-python cli.py -v archive.cast
-```
+| Feature | System Mode (`./7z_support`) | Native Mode (`./native`) |
+| :--- | :---: | :---: |
+| **Backend Engine** | External `7z` (C++) | Python `lzma` module |
+| **Multithreading** | ✅ Yes (via backend) | ❌ No (Single Core) |
+| **Chunking Support** | ✅ Yes (True Streaming) | ✅ Yes (True Streaming) |
+| **Compression Speed** | ⭐⭐⭐ | ⭐ |
+| **Dependencies** | Python 3 + `7z` | Python 3 Only |
 
 ---
 
-## 📊 Usage: Benchmarks
+## 🚀 How to Start
 
-The `run_benchmarks.py` script is used to calculate the **Theoretical Maximum Compression Ratio**.
-It compares CAST against standard libraries using their maximum compression settings (LZMA Preset 9 Extreme, Zstd 22, Brotli 11).
+Navigate to the variant of your choice to run the CLI or Benchmark tools.
 
-### Syntax
+### 1. Install Dependencies (Global)
+Both versions require the same dependencies for benchmarking (Zstd/Brotli):
 ```bash
-python run_benchmarks.py [--list LIST | --file FILE] [competitors]
+pip install -r requirements.txt
 ```
 
-### Input Arguments (Mutually Exclusive)
-* `--file <path>`: Test a single specific file.
-* `--list <path>`: Path to a text file containing a list of file paths (one per line).
+### 2. Run the Tool
+The syntax is identical for both variants.
 
-### Competitor Flags
-* `--lzma`: Compare against LZMA2 (XZ).
-* `--zstd`: Compare against Zstandard.
-* `--brotli`: Compare against Brotli.
-* `--all`: Compare against ALL supported algorithms.
-
-### Examples
-
-**1. Benchmark a single file against everything:**
+#### CLI Usage Examples (Real-World Use)
 ```bash
-python run_benchmarks.py --file "C:\Data\dataset.csv" --all
+# Standard Compression (Solid Mode): Loads full file into RAM for max Ratio. Includes verification (-v).
+python cli.py -c "large_dataset.csv" "archive.cast" -v
+
+# Chunked Compression (Stream Mode): Processes 100MB at a time. Ideal for files > RAM.
+python cli.py -c "large_dataset.csv" "archive.cast" --chunk-size 100MB -v
+
+# Decompression: Automatically detects mode.
+python cli.py -d "archive.cast" "restored.csv"
+
+# Integrity Check (Standalone): Verifies structure and CRC32 without extracting.
+python cli.py -v "archive.cast"
 ```
 
-**2. Benchmark a list of files against LZMA only:**
+#### Benchmark Usage Examples (Research)
 ```bash
-python run_benchmarks.py --list files.txt --lzma
-```
+# Benchmark All: Compares CAST vs LZMA/Zstd/Brotli on a file list.
+python run_benchmarks.py --list files.txt --all
 
-**3. Benchmark against Zstandard and Brotli:**
-```bash
-python run_benchmarks.py --file logs.txt --zstd --brotli
-```
-
-### Example `files.txt` format
-```text
-C:\Datasets\data.csv
-/home/user/logs/server.log
-# Lines starting with # are ignored
+# Benchmark Specific: Compares only against Brotli and Zstd.
+python run_benchmarks.py --list files.txt --brotli --zstd
 ```
 
 ---
 
 ## 🧠 Implementation Details
 
-### Why is this slower than Rust?
-1.  **Interpreter Overhead:** Python is an interpreted language.
-2.  **Regex Engine:** This version uses `re.match()` for every line. While flexible and easy to read, it introduces significant CPU overhead compared to the Rust version's zero-allocation byte scanner.
-3.  **Global Object Overhead:** Every `Skeleton` and `Variable` is a full Python object, incurring memory overhead.
+### Why use Python?
+* **Readability:** The distinction between `Skeleton` (structure) and `Variables` (data) is explicit and easy to inspect in the `CASTCompressor` class.
+* **Prototyping:** It serves as the "Gold Standard" logic verification for the faster Rust port.
 
-### When to use this version?
-* You want to read the code to understand *how* the Skeleton/Variable separation works.
-* You want to debug a specific parsing edge case.
-* You are verifying the bit-perfect reproducibility of the algorithm logic on small files.
-
-**For all other use cases, please use the [Rust Implementation](../rust_impl).**
+### Parsing Strategy: Regex vs. Manual
+Unlike the Rust implementation, which uses a custom zero-copy byte parser for maximum speed, this Python version uses the standard `re` (Regex) module.
+* **Reasoning:** In Python, a manual character-by-character loop is prohibitively slow due to interpreter overhead. The `re` module is implemented in C, making it significantly faster than any manual Python loop while keeping the code simple and readable.
