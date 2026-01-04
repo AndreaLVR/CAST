@@ -6,7 +6,7 @@ Unlike the `7z_support` variant, this version **does not** require any external 
 ## 🎯 Design Philosophy
 
 1.  **Portability:** Runs anywhere Python 3.10+ is installed (Windows, Linux, macOS) without configuration.
-2.  **Zero External Dependencies:** Uses `import lzma` (liblzma binding) for the backend compression.
+2.  **Zero External Tools Dependencies:** Uses `import lzma` (liblzma binding) for the backend compression.
 3.  **Algorithmic Baseline:** Serves as the strict logical reference for how CAST transforms data (Skeletons/Variables) before the final LZMA pass.
 
 ## ⚙️ Technical Characteristics
