@@ -5,7 +5,6 @@ use std::io::{Write};
 use std::process::Command;
 use std::env;
 use std::borrow::Cow;
-use std::cmp;
 
 // NOTA: Regex rimossa per mantenere i 50s di speedup!
 use crc32fast::Hasher;
@@ -750,4 +749,5 @@ impl CASTDecompressor {
         println!("Decompressione (7-Zip) terminata in {:.4} secondi", duration.as_secs_f64());
         final_data
     }
+
 }
