@@ -1,128 +1,65 @@
-# CAST: Python Reference Implementation
+# CAST: Native Python Implementation
 
-> ⚠️ **Educational Purpose Only**
->
-> This implementation is designed as a **Readable Reference** to understand the CAST algorithm's logic, data structures (`Skeleton` + `Variables`), and serialization format.
->
-> **It is NOT intended for production or performance profiling.**
-> * **Single-Threaded:** It runs on a single core.
-> * **Memory Bound:** It loads the entire dataset into memory (Monolithic processing). It **does not support chunking**. Do not attempt to process files larger than your available physical RAM.
-> * **Regex-Based:** It uses standard Python `re` module, which is significantly slower than the custom byte-level parser used in the Rust implementation.
+This directory contains the **Pure Python** reference implementation of the CAST algorithm.
+Unlike the `7z_support` variant, this version **does not** require any external executables. It relies strictly on Python's standard library.
 
-## 📂 Project Structure
+## 🎯 Design Philosophy
 
-* **`cast.py`**: The core library containing the `CAST` class, the `Skeleton` logic, and the standard Regex patterns used for parsing.
-* **`cli.py`**: A simple Command Line Interface to compress, decompress, and verify files.
-* **`run_benchmarks.py`**: A script to validate the compression ratio against Python's native `lzma`, `zstd`, and `brotli` libraries.
-* **`requirements.txt`**: List of dependencies (mainly for benchmarking).
+1.  **Portability:** Runs anywhere Python 3.10+ is installed (Windows, Linux, macOS) without configuration.
+2.  **Zero External Dependencies:** Uses `import lzma` (liblzma binding) for the backend compression.
+3.  **Algorithmic Baseline:** Serves as the strict logical reference for how CAST transforms data (Skeletons/Variables) before the final LZMA pass.
 
----
+## ⚙️ Technical Characteristics
 
-## ⚙️ Setup
+* **Parsing:** Uses Python's `re` module (compiled C Regex) for tokenization. This is chosen over manual loops because Python's interpreter overhead makes character-by-character parsing prohibitively slow.
+* **Compression:** Uses the standard `lzma.compress()` function.
+    * *Note:* Python's `lzma` module does not support multithreading for single-stream compression. As a result, this implementation is **single-threaded** and significantly slower than the Rust or 7z-based versions.
+* **Memory:**
+    * **Solid Mode:** Loads the entire file into RAM.
+    * **Chunked Mode:** Stream-processing available via CLI options.
 
-Ensure you have **Python 3.10+** installed.
+## 📂 Files
 
-1.  **Install Dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+* **`cast.py`**: The pure Python implementation. It contains the core `CASTCompressor` class using native libraries.
+* **`cli.py`**: Command-line tool for compressing/decompressing/verifying.
+* **`run_benchmarks.py`**: Tool to compare CAST efficiency against LZMA/Zstd/Brotli.
 
----
+## 🚀 Usage
 
-## 📦 Usage: CLI Tool
+### 1. CLI Tool (Compression & Decompression)
 
-The `cli.py` script allows you to test the algorithm on single files manually.
-
-### Syntax
 ```bash
-python cli.py <mode> <input_file> <output_file> [options]
+# Solid Compression (Best Ratio, High RAM)
+python cli.py -c input.csv output.cast -v
+
+# Chunked Compression (Low RAM, slightly lower Ratio)
+python cli.py -c input.csv output.cast --chunk-size 100MB -v
+
+# Decompression
+python cli.py -d output.cast restored.csv
 ```
 
-### Modes
-* `-c` : **Compress**. Reads input, compresses to `.cast`, and optionally verifies.
-* `-d` : **Decompress**. Restores the original file.
-* `-v` : **Verify Only**. Checks integrity without writing to disk.
+### 2. Benchmarks
 
-### Examples
-
-**1. Compress a file (Standard):**
+To run benchmarks, you first need to install the competitor libraries:
 ```bash
-python cli.py -c data.csv archive.cast
+pip install -r ../requirements.txt
 ```
 
-**2. Compress with Immediate Verification (Recommended):**
+Then run the suite:
 ```bash
-python cli.py -c data.csv archive.cast -v
-```
+# Compare against all competitors
+python run_benchmarks.py --list ../files.txt --all
 
-**3. Decompress and restore:**
-```bash
-python cli.py -d archive.cast restored.csv
-```
-
-**4. Check archive integrity (No extraction):**
-```bash
-python cli.py -v archive.cast
+# Compare against LZMA only
+python run_benchmarks.py --file data.csv --lzma
 ```
 
 ---
 
-## 📊 Usage: Benchmarks
+## ⚠️ Performance Notice
 
-The `run_benchmarks.py` script is used to calculate the **Theoretical Maximum Compression Ratio**.
-It compares CAST against standard libraries using their maximum compression settings (LZMA Preset 9 Extreme, Zstd 22, Brotli 11).
-
-### Syntax
-```bash
-python run_benchmarks.py [--list LIST | --file FILE] [competitors]
-```
-
-### Input Arguments (Mutually Exclusive)
-* `--file <path>`: Test a single specific file.
-* `--list <path>`: Path to a text file containing a list of file paths (one per line).
-
-### Competitor Flags
-* `--lzma`: Compare against LZMA2 (XZ).
-* `--zstd`: Compare against Zstandard.
-* `--brotli`: Compare against Brotli.
-* `--all`: Compare against ALL supported algorithms.
-
-### Examples
-
-**1. Benchmark a single file against everything:**
-```bash
-python run_benchmarks.py --file "C:\Data\dataset.csv" --all
-```
-
-**2. Benchmark a list of files against LZMA only:**
-```bash
-python run_benchmarks.py --list files.txt --lzma
-```
-
-**3. Benchmark against Zstandard and Brotli:**
-```bash
-python run_benchmarks.py --file logs.txt --zstd --brotli
-```
-
-### Example `files.txt` format
-```text
-C:\Datasets\data.csv
-/home/user/logs/server.log
-# Lines starting with # are ignored
-```
-
----
-
-## 🧠 Implementation Details
-
-### Why is this slower than Rust?
-1.  **Interpreter Overhead:** Python is an interpreted language.
-2.  **Regex Engine:** This version uses `re.match()` for every line. While flexible and easy to read, it introduces significant CPU overhead compared to the Rust version's zero-allocation byte scanner.
-3.  **Global Object Overhead:** Every `Skeleton` and `Variable` is a full Python object, incurring memory overhead.
-
-### When to use this version?
-* You want to read the code to understand *how* the Skeleton/Variable separation works.
-* You want to debug a specific parsing edge case.
-* You are verifying the bit-perfect reproducibility of the algorithm logic on small files.
-
-**For all other use cases, please use the [Rust Implementation](../rust_impl).**
+This implementation is CPU-bound by the Python Global Interpreter Lock (GIL).
+For large datasets (>1GB) or production environments, please use:
+1.  The **Rust Implementation** (Recommended).
+2.  The **7z_support** Python variant (if Rust is not an option).
