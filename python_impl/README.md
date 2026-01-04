@@ -39,7 +39,7 @@ The strict reference implementation using only Python's standard library modules
 | **Backend Engine** | External `7z` (C++) | Python `lzma` module |
 | **Multithreading** | ✅ Yes (via backend) | ❌ No (Single Core) |
 | **Chunking Support** | ✅ Yes (True Streaming) | ✅ Yes (True Streaming) |
-| **Compression Speed** | ⭐⭐⭐ | ⭐ |
+| **Compression Speed** | ⭐⭐⭐⭐⭐ | ⭐⭐ |
 | **Dependencies** | Python 3 + `7z` | Python 3 Only |
 
 ---
