@@ -33,7 +33,7 @@ Unlike the `7z_support` variant, this version **does not** require any external 
 python cli.py -c input.csv output.cast -v
 
 # Chunked Compression (Low RAM, slightly lower Ratio) + Immediate Verification
-python cli.py -c input.csv output.cast --chunk-size 100MB -v
+python cli.py -c input.csv output.cast --chunk-size 300MB -v
 
 # Decompression
 python cli.py -d output.cast restored.csv
