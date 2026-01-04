@@ -29,8 +29,13 @@ To build this project, you only need a standard Rust environment.
       sudo apt update
       sudo apt install build-essential liblzma-dev pkg-config
       ```
+    * **macOS:** Requires Xcode Command Line Tools (and optionally `xz` for system linking):
+      ```bash
+      xcode-select --install
+      # Optional (via Homebrew): brew install xz pkg-config
+      ```
 
-*Note: The project automatically compiles and statically links the necessary LZMA libraries. No manual installation of `vcpkg`, `liblzma`, or external DLLs is required.*
+*Note: The project automatically compiles and statically links the necessary LZMA libraries. No manual installation of `vcpkg` or external DLLs is required.*
 
 ---
 
