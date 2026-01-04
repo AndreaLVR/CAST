@@ -17,45 +17,20 @@ It includes a comprehensive **Benchmark Suite** to compare performance against i
 
 ---
 
-## 🛠️ Prerequisites (Build Time Only)
+## 🛠️ Prerequisites
 
-Since this implementation links against C libraries, you need to provide the development headers during the build process.
+To build this project, you only need a standard Rust environment.
 
-### Windows (Static Setup)
-To build a portable `.exe` that doesn't depend on DLLs, you need **vcpkg** to obtain the static version of `liblzma`.
+* **Rust & Cargo:** Install via [rustup.rs](https://rustup.rs/).
+* **Build Tools:**
+    * **Windows:** If Rust is working on your machine, you are already set (Visual Studio Build Tools are installed automatically by Rust).
+    * **Linux:** Requires standard compilation tools:
+      ```bash
+      sudo apt update
+      sudo apt install build-essential liblzma-dev pkg-config
+      ```
 
-1.  **Download and Install vcpkg:**
-    Open PowerShell or Command Prompt (as Administrator) and run:
-    ```powershell
-    git clone [https://github.com/microsoft/vcpkg.git](https://github.com/microsoft/vcpkg.git)
-    cd vcpkg
-    .\bootstrap-vcpkg.bat
-    ```
-
-2.  **Install static liblzma:**
-    ```powershell
-    .\vcpkg install liblzma:x64-windows-static
-    ```
-
-3.  **Configure Environment:**
-    Tell Cargo where vcpkg is located (replace path with your actual installation path).
-
-    **PowerShell:**
-    ```powershell
-    $env:VCPKG_ROOT = "C:\path\to\your\vcpkg"
-    ```
-
-    **CMD (Command Prompt):**
-    ```cmd
-    set VCPKG_ROOT=C:\path\to\your\vcpkg
-    ```
-
-### Linux (Ubuntu/Debian)
-Simply install the required development packages:
-```bash
-sudo apt update
-sudo apt install build-essential liblzma-dev pkg-config
-```
+*Note: The project automatically compiles and statically links the necessary LZMA libraries. No manual installation of `vcpkg`, `liblzma`, or external DLLs is required.*
 
 ---
 
