@@ -67,6 +67,6 @@ python run_benchmarks.py --file data.csv --all --chunk-size 100MB
 ## ⚠️ Performance Notice
 
 This implementation is CPU-bound by the Python Global Interpreter Lock (GIL).
-For large datasets (>1GB) or production environments, please use:
+For large datasets (>1GB) or better performances please use:
 1.  The **Rust Implementation** (Recommended).
-2.  The **7z_support** Python variant (if Rust is not an option).
+2.  The **7z_support** Python variant.
