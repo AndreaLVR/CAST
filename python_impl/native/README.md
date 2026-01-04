@@ -22,7 +22,7 @@ Unlike the `7z_support` variant, this version **does not** require any external 
 
 * **`cast.py`**: The pure Python implementation. It contains the core `CASTCompressor` class using native libraries.
 * **`cli.py`**: Command-line tool for compressing/decompressing/verifying.
-* **`run_benchmarks.py`**: Tool to compare CAST efficiency against LZMA/Zstd/Brotli.
+* **`run_benchmarks.py`**: Tool to compare CAST efficiency against LZMA2/Zstd/Brotli.
 
 ## 🚀 Usage
 
