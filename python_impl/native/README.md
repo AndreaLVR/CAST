@@ -56,6 +56,10 @@ python run_benchmarks.py --list ../files.txt --all
 
 # Compare against LZMA only
 python run_benchmarks.py --file data.csv --lzma
+
+# Benchmark with Simulated Chunking
+# (Note: Unlike the CLI, this loads the full file into RAM to ensure fair timing vs competitors)
+python run_benchmarks.py --file data.csv --all --chunk-size 100MB
 ```
 
 ---
