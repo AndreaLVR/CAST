@@ -43,7 +43,11 @@ To provide a comprehensive evaluation, this project features **two distinct impl
 1.  **🦀 Rust Performance Engine:** The core implementation used for **ALL official benchmarks**.
     * *Native Mode:* Standalone, dependency-free. Used to measure **Algorithmic Efficiency (Compression Ratio)** without external overhead.
     * *System Mode (7-Zip Backend):* Pipes data to the external 7-Zip executable (LZMA2). Used to demonstrate **Production Throughput** and scalability in real-world pipelines.
-2.  **🐍 Python Reference:** A **simplified** implementation provided solely for **educational purposes** and algorithmic readability. **It was NOT used for any benchmark results presented in the paper.**
+2.  **🐍 Python Reference:** Designed for **algorithmic readability** and logic verification.
+    * **Architecture:** Mirrors the Rust structure with **Native** (Pure Python) and **System** (7-Zip Backend) variants.
+    * **Threading:** The *Native* variant is **single-threaded** (bound by the GIL), while the *System* variant achieves **multi-threading** by offloading compression to the external 7-Zip process.
+    * **Parsing Strategy:** Uses compiled **Regex** for tokenization (unlike Rust's zero-copy byte scanner) to mitigate the overhead of Python's interpreter loops.
+    * *Note:* While fully functional (including chunking), it was **NOT** used for the performance timings presented in the paper.
 
 > 📂 **Data Sources:** Benchmarks were performed on real-world datasets sourced from Kaggle and Open Data repositories. For a full list of source URLs and descriptions, please refer to [DATASETS.md](./DATASETS.md).
 
