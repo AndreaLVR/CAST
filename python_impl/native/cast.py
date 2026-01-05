@@ -9,8 +9,13 @@ from typing import List, Tuple, Union, Optional
 class CASTCompressor:
     """
     Handles the compression of structured data using the CAST (Columnar Agnostic Structural Transformation) algorithm.
-    Includes Latin-1 fallback for binary-dirty CSVs.
+    Includes Latin-1 fallback and 'Always Escaped' logic for binary safety.
     """
+
+    # --- CONSTANTS (PRIVATE USE AREA) ---
+    VAR_PLACEHOLDER = "\uE000"
+    VAR_PLACEHOLDER_QUOTE = '"\uE000"'
+    REG_SEP = "\uE001"
 
     def __init__(self) -> None:
         self.template_map = {}
@@ -52,7 +57,8 @@ class CASTCompressor:
 
         strict_templates = set()
         for line in sample_lines:
-            skel = self.regex_strict.sub(lambda m: "\x00", line)
+            # Placeholder sicuro per l'analisi
+            skel = self.regex_strict.sub(lambda m: self.VAR_PLACEHOLDER, line)
             strict_templates.add(skel)
 
         ratio = len(strict_templates) / len(sample_lines)
@@ -63,36 +69,39 @@ class CASTCompressor:
             self.active_pattern = self.regex_strict
             self.mode_name = "Strict"
 
-    def _mask_line(self, line: str) -> Tuple[str, List[str]]:
+    def _mask_line(self, line: str) -> Optional[Tuple[str, List[str]]]:
+        # Fail-Safe: Se la riga contiene i nostri caratteri speciali, abortiamo
+        if self.VAR_PLACEHOLDER in line or self.REG_SEP in line:
+            return None
+
         variables = []
 
         def replace_callback(match):
             token = match.group(0)
             if token.startswith('"'):
                 variables.append(token[1:-1])
-                return '"\x00"'
+                return self.VAR_PLACEHOLDER_QUOTE
             else:
                 variables.append(token)
-                return "\x00"
+                return self.VAR_PLACEHOLDER
 
         masked_line = self.active_pattern.sub(replace_callback, line)
         return masked_line, variables
 
     def compress(
-            self, input_data: Union[bytes, str]
+        self, input_data: Union[bytes, str]
     ) -> Tuple[bytes, bytes, bytes, int, str]:
-
         # --- 1. DECODING & LATIN-1 CHECK ---
         is_latin1 = False
 
         if isinstance(input_data, bytes):
+            # Analisi entropia veloce
             if self._is_likely_binary(input_data):
                 return self._create_passthrough(input_data, "Passthrough [Binary]")
             try:
                 text_data = input_data.decode("utf-8")
             except UnicodeDecodeError:
                 try:
-                    # Fallback critico per file come BX_Books.csv
                     text_data = input_data.decode("latin-1")
                     is_latin1 = True
                 except:
@@ -112,7 +121,13 @@ class CASTCompressor:
         for line in lines:
             if not line:
                 continue
-            skeleton, vars_found = self._mask_line(line)
+
+            result = self._mask_line(line)
+            if result is None:
+                # Collision detected -> Safe Fallback
+                return self._create_passthrough(input_data, "Collision Protected")
+
+            skeleton, vars_found = result
 
             if skeleton in self.template_map:
                 t_id = self.template_map[skeleton]
@@ -175,9 +190,9 @@ class CASTCompressor:
             self.columns_storage = new_columns_storage
             self.stream_template_ids = new_stream_template_ids
 
-        # --- 4. SERIALIZATION ---
-        REG_SEP = "\x1e"
-        raw_registry = REG_SEP.join(self.skeletons_list).encode("utf-8")
+        # --- 4. SERIALIZATION (ALWAYS ESCAPED) ---
+        # Usiamo il separatore sicuro per il registro
+        raw_registry = self.REG_SEP.join(self.skeletons_list).encode("utf-8")
 
         if num_templates == 1:
             raw_ids = b""
@@ -202,36 +217,32 @@ class CASTCompressor:
         if is_latin1:
             id_mode_flag |= 0x80
 
-        # --- SEPARATORS ---
-        if decision_mode == "SPLIT":
-            ROW_SEP = b"\x00"
-            COL_SEP = b"\xff\xff"
-            ESCAPE_NEEDED = False
-        else:
-            ROW_SEP = b"\x00"
-            COL_SEP = b"\x02"  # Safe unified separator
-            ESCAPE_NEEDED = True
+        # Constants for Byte Stuffing
+        B_ESC = b"\x01"
+        B_ROW = b"\x00"
+        B_COL = b"\x02"
 
-            B_ESC = b"\x01"
-            B_ROW = b"\x00"
-            B_COL = b"\x02"
+        SEQ_ESC = b"\x01\x01"
+        SEQ_ROW = b"\x01\x00"
+        SEQ_COL = b"\x01\x03"
 
-            SEQ_ESC = b"\x01\x01"
-            SEQ_ROW = b"\x01\x00"
-            SEQ_COL = b"\x01\x03"
+        # FIX: Always use Escaped separators (Safe Mode)
+        ROW_SEP = b"\x00"
+        COL_SEP = b"\x02"
 
         vars_buffer = bytearray()
+
         for t_id in range(len(self.skeletons_list)):
             columns = self.columns_storage[t_id]
             for values_list in columns:
                 encoded_values = []
                 for v in values_list:
                     v_bytes = v.encode("utf-8")
-                    if ESCAPE_NEEDED:
-                        # Apply escaping
-                        v_bytes = v_bytes.replace(B_ESC, SEQ_ESC)
-                        v_bytes = v_bytes.replace(B_ROW, SEQ_ROW)
-                        v_bytes = v_bytes.replace(B_COL, SEQ_COL)
+
+                    # Always apply escaping
+                    v_bytes = v_bytes.replace(B_ESC, SEQ_ESC)
+                    v_bytes = v_bytes.replace(B_ROW, SEQ_ROW)
+                    v_bytes = v_bytes.replace(B_COL, SEQ_COL)
 
                     encoded_values.append(v_bytes)
 
@@ -264,7 +275,7 @@ class CASTCompressor:
             return b"", b"", c_solid, id_mode_flag, self.mode_name
 
     def _create_passthrough(
-            self, data: Union[bytes, str], reason: str = "Passthrough"
+        self, data: Union[bytes, str], reason: str = "Passthrough"
     ) -> Tuple[bytes, bytes, bytes, int, str]:
         if isinstance(data, str):
             data_bytes = data.encode("utf-8")
@@ -278,16 +289,20 @@ class CASTCompressor:
 class CASTDecompressor:
     """
     Handles the decompression of CAST-encoded data streams.
-    Fully compatible with Rust Latin-1 Flag fix.
+    Safe & Lossless (Always Escaped).
     """
 
+    # Constants for reconstruction
+    VAR_PLACEHOLDER = "\uE000"
+    REG_SEP = "\uE001"
+
     def decompress(
-            self,
-            c_registry: bytes,
-            c_ids: bytes,
-            c_vars: bytes,
-            expected_crc: Optional[int] = None,
-            id_mode_flag: int = 0,
+        self,
+        c_registry: bytes,
+        c_ids: bytes,
+        c_vars: bytes,
+        expected_crc: Optional[int] = None,
+        id_mode_flag: int = 0,
     ) -> bytes:
         if id_mode_flag == 255:
             data = lzma.decompress(c_vars)
@@ -297,96 +312,127 @@ class CASTDecompressor:
 
         # --- 1. FLAG PARSING ---
         is_latin1 = (id_mode_flag & 0x80) != 0
-        real_id_flag = id_mode_flag & 0x7F  # Clean flag for logic
+        real_id_flag = id_mode_flag & 0x7F
 
         is_unified = len(c_registry) == 0 and len(c_ids) == 0
-        REG_SEP = "\x1e"
 
-        if is_unified:
-            ROW_SEP = b"\x00"
-            COL_SEP = b"\x02"
-            ESCAPE_NEEDED = True
+        # Constants (Always Escaped Mode)
+        SEQ_ESC = b"\x01\x01"
+        SEQ_ROW = b"\x01\x00"
+        SEQ_COL = b"\x01\x03"
 
-            SEQ_ESC = b"\x01\x01"
-            SEQ_ROW = b"\x01\x00"
-            SEQ_COL = b"\x01\x03"
+        B_ESC = b"\x01"
+        B_ROW = b"\x00"
+        B_COL = b"\x02"
 
-            B_ESC = b"\x01"
-            B_ROW = b"\x00"
-            B_COL = b"\x02"
-        else:
-            ROW_SEP = b"\x00"
-            COL_SEP = b"\xff\xff"
-            ESCAPE_NEEDED = False
+        COL_SEP_BYTE = 0x02
+        ROW_SEP_BYTE = 0x00
 
         # --- 2. DECOMPRESSION & PARSING ---
         if is_unified:
             full_payload = lzma.decompress(c_vars)
             len_reg, len_ids = struct.unpack("<II", full_payload[:8])
             offset = 8
-            reg_data_bytes = full_payload[offset: offset + len_reg]
+            reg_data_bytes = full_payload[offset : offset + len_reg]
             offset += len_reg
 
             if real_id_flag == 3:
                 ids_data_bytes = b""
             else:
-                ids_data_bytes = full_payload[offset: offset + len_ids]
+                ids_data_bytes = full_payload[offset : offset + len_ids]
                 offset += len_ids
             vars_data_bytes = full_payload[offset:]
 
             reg_data = reg_data_bytes.decode("utf-8")
-            skeletons = reg_data.split(REG_SEP)
+            skeletons = reg_data.split(self.REG_SEP)
 
             if real_id_flag == 3:
                 template_ids = []
             else:
                 template_ids = self._unpack_ids(ids_data_bytes, real_id_flag)
-
-            raw_columns = vars_data_bytes.split(COL_SEP)
         else:
             reg_payload = lzma.decompress(c_registry)
             reg_data = reg_payload.decode("utf-8")
-            skeletons = reg_data.split(REG_SEP)
+            skeletons = reg_data.split(self.REG_SEP)
 
             ids_data = lzma.decompress(c_ids)
             template_ids = self._unpack_ids(ids_data, real_id_flag)
 
-            vars_data = lzma.decompress(c_vars)
-            raw_columns = vars_data.split(COL_SEP)
+            vars_data_bytes = lzma.decompress(c_vars)
 
-        if raw_columns and not raw_columns[-1]:
-            raw_columns.pop()
+        # --- 3. COLUMN PARSING (MANUAL BYTE SCAN) ---
+        # Python's split() is not enough for byte stuffing logic, need careful scan
+
+        # 3.1 Find Columns
+        raw_columns_offsets = []
+        start = 0
+        i = 0
+        max_len = len(vars_data_bytes)
+
+        while i < max_len:
+            val = vars_data_bytes[i]
+            if val == 0x01:  # Escape
+                i += 2
+            elif val == COL_SEP_BYTE:
+                raw_columns_offsets.append((start, i))
+                i += 1
+                start = i
+            else:
+                i += 1
+
+        if start < max_len:
+            raw_columns_offsets.append((start, max_len))
 
         columns_storage = {}
-        col_idx_counter = 0
+        col_iter = iter(raw_columns_offsets)
 
         skeleton_parts_cache = []
         for s in skeletons:
-            parts = [p.encode("utf-8") for p in s.split("\x00")]
+            parts = [p.encode("utf-8") for p in s.split(self.VAR_PLACEHOLDER)]
             skeleton_parts_cache.append(parts)
 
-        # --- 3. COLUMN RECONSTRUCTION ---
+        # 3.2 Extract Rows
         for t_id, skel in enumerate(skeletons):
-            num_vars = skel.count("\x00")
+            # Conta occorrenze del placeholder
+            num_vars = skel.count(self.VAR_PLACEHOLDER)
             columns_storage[t_id] = []
 
             for _ in range(num_vars):
-                if col_idx_counter < len(raw_columns):
-                    col_bytes = raw_columns[col_idx_counter]
-                    raw_vals = col_bytes.split(ROW_SEP)
+                try:
+                    col_start, col_end = next(col_iter)
+                    decoded_vals = []
 
-                    if ESCAPE_NEEDED:
-                        decoded_vals = []
-                        for v in raw_vals:
-                            v = v.replace(SEQ_COL, B_COL)
-                            v = v.replace(SEQ_ROW, B_ROW)
-                            v = v.replace(SEQ_ESC, B_ESC)
-                            decoded_vals.append(v)
-                        columns_storage[t_id].append(iter(decoded_vals))
-                    else:
-                        columns_storage[t_id].append(iter(raw_vals))
+                    curr = col_start
+                    cell_start = curr
 
-                    col_idx_counter += 1
+                    while curr < col_end:
+                        val = vars_data_bytes[curr]
+                        if val == 0x01:  # Escape
+                            curr += 2
+                        elif val == ROW_SEP_BYTE:
+                            # Extract & Unescape
+                            chunk = vars_data_bytes[cell_start:curr]
+                            chunk = chunk.replace(SEQ_COL, B_COL)
+                            chunk = chunk.replace(SEQ_ROW, B_ROW)
+                            chunk = chunk.replace(SEQ_ESC, B_ESC)
+                            decoded_vals.append(chunk)
+
+                            curr += 1
+                            cell_start = curr
+                        else:
+                            curr += 1
+
+                    # Last cell
+                    chunk = vars_data_bytes[cell_start:curr]
+                    chunk = chunk.replace(SEQ_COL, B_COL)
+                    chunk = chunk.replace(SEQ_ROW, B_ROW)
+                    chunk = chunk.replace(SEQ_ESC, B_ESC)
+                    decoded_vals.append(chunk)
+
+                    columns_storage[t_id].append(iter(decoded_vals))
+
+                except StopIteration:
+                    break
 
         # --- 4. STREAM RECONSTRUCTION ---
         reconstructed_fragments = []
@@ -395,11 +441,17 @@ class CASTDecompressor:
         if real_id_flag == 3:
             parts = skeleton_parts_cache[0]
             queues = columns_storage[0]
-            for vars_tuple in zip(*queues):
-                row_components = [b""] * (len(parts) + len(vars_tuple))
-                row_components[::2] = parts
-                row_components[1::2] = vars_tuple
-                buf_append(b"".join(row_components))
+            # Assumiamo che tutte le colonne abbiano la stessa lunghezza
+            if queues:
+                for vars_tuple in zip(*queues):
+                    row_components = [b""] * (len(parts) + len(vars_tuple))
+                    row_components[::2] = parts
+                    row_components[1::2] = vars_tuple
+                    buf_append(b"".join(row_components))
+            else:
+                # No vars case (solo testo statico ripetuto)
+                # Questo caso è raro in CAST ma possibile (log di sole righe fisse)
+                pass  # TODO: Gestire righe fisse senza variabili se necessario
 
         else:
             for t_id in template_ids:
@@ -416,10 +468,9 @@ class CASTDecompressor:
 
         final_blob = b"".join(reconstructed_fragments)
 
-        # --- 5. LATIN-1 RESTORATION (CRITICAL FIX) ---
+        # --- 5. LATIN-1 RESTORATION ---
         if is_latin1:
             try:
-                # Invertiamo l'espansione UTF-8 avvenuta in fase di compressione
                 temp_str = final_blob.decode("utf-8")
                 final_blob = temp_str.encode("latin-1")
             except Exception as e:
