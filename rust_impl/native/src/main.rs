@@ -15,6 +15,7 @@ fn main() {
     let use_multithread = args.iter().any(|arg| arg == "--multithread");
     let verify_flag = args.iter().any(|arg| arg == "-v" || arg == "--verify");
 
+    // Chunk Size parsing
     let mut chunk_size_bytes: Option<usize> = None;
     if let Some(pos) = args.iter().position(|arg| arg == "--chunk-size") {
         if pos + 1 < args.len() {
@@ -27,9 +28,27 @@ fn main() {
         }
     }
 
+    // CHANGED: Dict Size parsing
+    let mut dict_size_bytes: Option<u32> = None;
+    if let Some(pos) = args.iter().position(|arg| arg == "--dict-size") {
+        if pos + 1 < args.len() {
+            let val = &args[pos+1];
+            if let Some(s) = parse_size(val) {
+                dict_size_bytes = Some(s as u32);
+            } else {
+                eprintln!("[!] Error: Invalid dict size format.");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Filter out args
     let clean_args: Vec<String> = args.iter()
         .filter(|arg| *arg != "--multithread" && *arg != "-v" && *arg != "--verify"
-                      && *arg != "--chunk-size" && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--chunk-size").map(|p| p+1))
+                      && *arg != "--chunk-size"
+                      && *arg != "--dict-size"
+                      && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--chunk-size").map(|p| p+1)
+                      && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--dict-size").map(|p| p+1))
         .cloned()
         .collect();
 
@@ -61,15 +80,17 @@ fn main() {
             println!("      Output:      {}", output);
             println!("      Mode:        {}", if use_multithread { "MULTITHREAD" } else { "SOLID (SINGLE THREAD)" });
 
-            // 1. Perform ONLY compression
-            // When this function returns, all RAM used for compression (buffer) is freed.
-            do_compress(input, output, use_multithread, chunk_size_bytes);
+            let final_dict = dict_size_bytes.unwrap_or(128 * 1024 * 1024);
+            println!("      Dict Size:   {}", format_bytes(final_dict as usize));
 
-            // 2. If requested, perform verification now that RAM is clean.
+
+            // 1. Perform ONLY compression
+            do_compress(input, output, use_multithread, chunk_size_bytes, final_dict);
+
+            // 2. If requested, perform verification
             if verify_flag {
                 println!("\n------------------------------------------------");
                 println!("[*] Starting Post-Compression Verification...");
-                // Short pause to ensure the file has been released by the OS
                 std::thread::sleep(std::time::Duration::from_millis(500));
                 do_verify_standalone(output);
             }
@@ -133,19 +154,19 @@ fn print_usage() {
           -v <file>          Verify the integrity of a CAST file\n\n\
         Options:\n  \
           --multithread      Enable parallel processing for higher speed\n  \
-          --chunk-size <S>   Process file in chunks (e.g., 512MB, 1GB, 50000B)\n                     \
-                             Use this to handle files larger than your RAM.\n  \
+          --chunk-size <S>   Process file in chunks (e.g., 512MB, 1GB, 50000B)\n  \
+          --dict-size <S>    Set LZMA Dictionary size (Default: 128MB)\n\
           -v, --verify       (During compression) Run an immediate integrity check\n\n\
         Examples:\n  \
           cargo run --release -- -c data.csv archive.gtf --multithread\n  \
-          cargo run --release -- -c large_log.txt archive.gtf --chunk-size 256MB --verify\n  \
+          cargo run --release -- -c large_log.txt archive.gtf --chunk-size 256MB --dict-size 256MB\n  \
           cargo run --release -- -v archive.gtf"
     );
 }
 
 // --- COMPRESSION ---
 
-fn do_compress(input_path: &str, output_path: &str, multithread: bool, chunk_bytes_limit: Option<usize>) {
+fn do_compress(input_path: &str, output_path: &str, multithread: bool, chunk_bytes_limit: Option<usize>, dict_size: u32) {
     let start_total = Instant::now();
     let mut f_in = File::open(input_path).expect("Error opening input");
     let mut f_out = File::create(output_path).expect("Error creating output");
@@ -181,8 +202,8 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, chunk_byt
         h.update(chunk_data);
         let chunk_crc = h.finalize();
 
-        // CAST Compression
-        let mut compressor = CASTCompressor::new(multithread);
+        // CAST Compression (Pass dict_size)
+        let mut compressor = CASTCompressor::new(multithread, dict_size);
         let (c_reg, c_ids, c_vars, id_flag, _) = compressor.compress(chunk_data);
 
         let mut header = Vec::new();
@@ -203,7 +224,6 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, chunk_byt
         if chunk_bytes_limit.is_none() { break; }
     }
 
-    // Explicitly close the file handler
     drop(f_out);
 
     let ratio = if total_written > 0 { total_read as f64 / total_written as f64 } else { 0.0 };
@@ -215,13 +235,12 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, chunk_byt
     println!("       Time:           {:.2}s", start_total.elapsed().as_secs_f64());
 }
 
-// --- DECOMPRESSION ---
+// --- DECOMPRESSION (INVARIATO) ---
 
 fn do_decompress(input_path: &str, output_path: &str) {
     let start = Instant::now();
     let f_in = File::open(input_path).expect("Error opening archive");
 
-    // Controllo preventivo dimensione file
     if f_in.metadata().unwrap().len() == 0 {
         eprintln!("[!] ERROR: Input file is empty (0 bytes).");
         return;
@@ -239,11 +258,9 @@ fn do_decompress(input_path: &str, output_path: &str) {
         match reader.read_exact(&mut header) {
             Ok(_) => {},
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                // Se EOF capita subito al primo giro, è un errore.
                 if chunk_idx == 0 {
                     eprintln!("[!] ERROR: File header missing or corrupted.");
                 }
-                // Se capita dopo N chunk, è la fine naturale del file.
                 break;
             },
             Err(e) => panic!("Error reading header: {}", e),
@@ -276,7 +293,7 @@ fn do_decompress(input_path: &str, output_path: &str) {
     }
 }
 
-// --- VERIFICATION ---
+// --- VERIFICATION (INVARIATO) ---
 
 fn do_verify_standalone(input_path: &str) {
     let start = Instant::now();
@@ -306,7 +323,6 @@ fn do_verify_standalone(input_path: &str) {
         let mut body_buffer = vec![0u8; body_len];
         reader.read_exact(&mut body_buffer).expect("Truncated file in body");
 
-        // UI: Feedback before calculation
         print!("\r       Verifying Chunk #{}... ", chunk_idx);
         io::stdout().flush().unwrap();
 
@@ -315,7 +331,6 @@ fn do_verify_standalone(input_path: &str) {
         let chunk_vars = &body_buffer[l_reg+l_ids .. l_reg+l_ids+l_vars];
 
         let res = std::panic::catch_unwind(|| {
-            // Here we perform full decompression as a check
             let restored = decompressor.decompress(chunk_reg, chunk_ids, chunk_vars, expected_crc, id_flag);
             let mut h = Hasher::new();
             h.update(&restored);
