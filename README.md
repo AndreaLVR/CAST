@@ -38,6 +38,10 @@ This repository contains the source code and benchmarking tools used to produce 
 
 > **ℹ️ Note on Backend:** While the CAST algorithm is fundamentally backend-agnostic (compatible with LZMA, Zstd, Brotli, etc.), the implementations provided in this repository are specifically tuned to leverage **LZMA2** as the reference backend to demonstrate maximum compression density.
 
+> **⚖️ Note on Dataset Composition:**
+> The dataset selection is **intentionally weighted** towards the algorithm's target domain—structured machine-generated data—to fully explore the optimization potential in relevant scenarios.
+> However, to define the algorithm's operational boundaries, we also included a small control group representing **low-redundancy scenarios** (including unstructured text and high-variance structured files). This verifies that CAST's benefits are strictly dependent on *exploitable* structural redundancy.
+
 To provide a comprehensive evaluation, this project features **two distinct Rust implementations**:
 
 1.  **🦀 Rust Performance Engine:** The core implementation used for **ALL official benchmarks**.
