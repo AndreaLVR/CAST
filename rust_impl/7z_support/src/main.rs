@@ -13,7 +13,6 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     // --- ARGUMENT PARSING ---
-    // Removed --multithread handling as requested
     let verify_flag = args.iter().any(|arg| arg == "-v" || arg == "--verify");
 
     let mut chunk_size_bytes: Option<usize> = None;
@@ -28,10 +27,25 @@ fn main() {
         }
     }
 
-    // Filter arguments removing special flags to isolate path and mode
+    // CHANGED: Dict Size parsing (Default: 128 MB)
+    let mut dict_size_bytes: u32 = 128 * 1024 * 1024;
+    if let Some(pos) = args.iter().position(|arg| arg == "--dict-size") {
+        if pos + 1 < args.len() {
+            let val = &args[pos+1];
+            if let Some(s) = parse_size(val) {
+                dict_size_bytes = s as u32;
+            } else {
+                eprintln!("[!] Error: Invalid dict size format.");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Filter arguments
     let clean_args: Vec<String> = args.iter()
         .filter(|arg| *arg != "-v" && *arg != "--verify"
-                      && *arg != "--chunk-size" && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--chunk-size").map(|p| p+1))
+                      && *arg != "--chunk-size" && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--chunk-size").map(|p| p+1)
+                      && *arg != "--dict-size" && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--dict-size").map(|p| p+1))
         .cloned()
         .collect();
 
@@ -61,12 +75,12 @@ fn main() {
             println!("\n[*] Starting Compression...");
             println!("      Input:       {}", input);
             println!("      Output:      {}", output);
-            // We no longer print Multithread/Single mode, it is handled automatically by 7z
+            println!("      Dict Size:   {}", format_bytes(dict_size_bytes as usize));
 
-            // 1. Perform compression
-            do_compress(input, output, chunk_size_bytes);
+            // 1. Perform compression (Passing dict_size)
+            do_compress(input, output, chunk_size_bytes, dict_size_bytes);
 
-            // 2. Optional verification (as per permanent instruction: always check decompression if requested)
+            // 2. Optional verification
             if verify_flag {
                 println!("\n------------------------------------------------");
                 println!("[*] Starting Post-Compression Verification...");
@@ -132,19 +146,20 @@ fn print_usage() {
           -d <in> <out>      Decompress CAST file to original format\n  \
           -v <file>          Verify the integrity of a CAST file\n\n\
         Options:\n  \
-          --chunk-size <S>   Process file in chunks (e.g., 512MB, 1GB, 50000B)\n                     \
-                             Use this to handle files larger than your RAM.\n  \
+          --chunk-size <S>   Process file in chunks (e.g., 512MB, 1GB, 50000B)\n\
+          --dict-size <S>    Set 7-Zip LZMA Dictionary size (Default: 128MB)\n\
           -v, --verify       (During compression) Run an immediate integrity check\n\n\
         Examples:\n  \
           cargo run --release -- -c data.csv archive.gtf\n  \
-          cargo run --release -- -c large_log.txt archive.gtf --chunk-size 256MB --verify\n  \
+          cargo run --release -- -c large_log.txt archive.gtf --chunk-size 256MB --dict-size 256MB\n  \
           cargo run --release -- -v archive.gtf"
     );
 }
 
 // --- COMPRESSION ---
 
-fn do_compress(input_path: &str, output_path: &str, chunk_bytes_limit: Option<usize>) {
+// CHANGED: Added dict_size parameter
+fn do_compress(input_path: &str, output_path: &str, chunk_bytes_limit: Option<usize>, dict_size: u32) {
     let start_total = Instant::now();
     let mut f_in = File::open(input_path).expect("Error opening input");
     let mut f_out = File::create(output_path).expect("Error creating output");
@@ -179,8 +194,8 @@ fn do_compress(input_path: &str, output_path: &str, chunk_bytes_limit: Option<us
         h.update(chunk_data);
         let chunk_crc = h.finalize();
 
-        // CAST Compression (Passing false as dummy for multithread)
-        let mut compressor = CASTCompressor::new(false);
+        // CAST Compression (Passing false as dummy multithread + dict_size)
+        let mut compressor = CASTCompressor::new(false, dict_size);
         let (c_reg, c_ids, c_vars, id_flag, _) = compressor.compress(chunk_data);
 
         let mut header = Vec::new();
@@ -201,7 +216,6 @@ fn do_compress(input_path: &str, output_path: &str, chunk_bytes_limit: Option<us
         if chunk_bytes_limit.is_none() { break; }
     }
 
-    // Explicit drop to flush to disk
     drop(f_out);
 
     let ratio = if total_written > 0 { total_read as f64 / total_written as f64 } else { 0.0 };
@@ -213,7 +227,7 @@ fn do_compress(input_path: &str, output_path: &str, chunk_bytes_limit: Option<us
     println!("       Time:           {:.2}s", start_total.elapsed().as_secs_f64());
 }
 
-// --- DECOMPRESSION ---
+// --- DECOMPRESSION (INVARIATO) ---
 
 fn do_decompress(input_path: &str, output_path: &str) {
     let start = Instant::now();
@@ -257,7 +271,7 @@ fn do_decompress(input_path: &str, output_path: &str) {
     println!("\n[+]    Decompression done in {:.2}s", start.elapsed().as_secs_f64());
 }
 
-// --- VERIFICATION (Recommended for your checklist) ---
+// --- VERIFICATION (INVARIATO) ---
 
 fn do_verify_standalone(input_path: &str) {
     let start = Instant::now();

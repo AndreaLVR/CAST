@@ -212,7 +212,8 @@ fn get_7z_cmd() -> String {
     }
 }
 
-pub fn compress_with_7z(data: &[u8]) -> Vec<u8> {
+// CHANGED: Added `dict_size` parameter
+pub fn compress_with_7z(data: &[u8], dict_size: u32) -> Vec<u8> {
     if data.is_empty() { return Vec::new(); }
 
     let pid = std::process::id();
@@ -230,9 +231,13 @@ pub fn compress_with_7z(data: &[u8]) -> Vec<u8> {
         f.sync_all().unwrap();
     }
 
+    // CHANGED: Dynamic dictionary size argument construction
+    // e.g., "-m0=lzma2:d134217728b" (7-Zip supports 'b' suffix for bytes)
+    let dict_arg = format!("-m0=lzma2:d{}b", dict_size);
+
     let cmd = get_7z_cmd();
     let output = Command::new(&cmd)
-        .args(&["a", "-txz", "-mx=9", "-mmt=on", "-m0=lzma2:d128m", "-y", "-bb0", &tmp_out, &tmp_in])
+        .args(&["a", "-txz", "-mx=9", "-mmt=on", &dict_arg, "-y", "-bb0", &tmp_out, &tmp_in])
         .output();
 
     match output {
@@ -306,10 +311,12 @@ pub struct CASTCompressor {
     mode: ParsingMode,
     #[allow(dead_code)]
     multithread: bool,
+    dict_size: u32, // CHANGED: Field added
 }
 
 impl CASTCompressor {
-    pub fn new(multithread: bool) -> Self {
+    // CHANGED: Accepts dict_size
+    pub fn new(multithread: bool, dict_size: u32) -> Self {
         CASTCompressor {
             template_map: HashMap::new(),
             skeletons_list: Vec::new(),
@@ -318,6 +325,7 @@ impl CASTCompressor {
             next_template_id: 0,
             mode: ParsingMode::Strict,
             multithread,
+            dict_size,
         }
     }
 
@@ -504,10 +512,11 @@ impl CASTCompressor {
             ParsingMode::Aggressive => "Aggressive"
         };
 
+        // CHANGED: Pass dict_size
         if decision_mode == "SPLIT" {
-             let c_reg = compress_with_7z(&raw_registry);
-             let c_ids = compress_with_7z(&raw_ids);
-             let c_vars = compress_with_7z(&vars_buffer);
+             let c_reg = compress_with_7z(&raw_registry, self.dict_size);
+             let c_ids = compress_with_7z(&raw_ids, self.dict_size);
+             let c_vars = compress_with_7z(&vars_buffer, self.dict_size);
              (c_reg, c_ids, c_vars, id_mode_flag, mode_str.to_string())
         } else {
              let len_reg = raw_registry.len() as u32;
@@ -518,14 +527,15 @@ impl CASTCompressor {
              solid.extend_from_slice(&raw_registry);
              solid.extend_from_slice(&raw_ids);
              solid.extend_from_slice(&vars_buffer);
-             let c_solid = compress_with_7z(&solid);
+             let c_solid = compress_with_7z(&solid, self.dict_size);
              (Vec::new(), Vec::new(), c_solid, id_mode_flag, mode_str.to_string())
         }
     }
 
     fn create_passthrough(&self, data: &[u8], reason: &str) -> (Vec<u8>, Vec<u8>, Vec<u8>, u8, String) {
         println!("[!] Switching to Passthrough ({})", reason);
-        let c_vars = compress_with_7z(data);
+        // CHANGED: Pass dict_size
+        let c_vars = compress_with_7z(data, self.dict_size);
         (Vec::new(), Vec::new(), c_vars, 255, reason.to_string())
     }
 }
