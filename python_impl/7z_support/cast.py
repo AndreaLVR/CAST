@@ -49,9 +49,14 @@ class CASTCompressor:
             return env_path
         return shutil.which("7z") or shutil.which("7za")
 
-    def _7z_compress(self, data: bytes) -> bytes:
+    # CHANGED: Added dict_size parameter
+    def _7z_compress(self, data: bytes, dict_size: int) -> bytes:
         """Pipes data to external 7z executable for compression."""
         if not data: return b""  # Empty buffer protection
+
+        # Dynamic argument using bytes suffix 'b'
+        dict_arg = f"-m0=lzma2:d{dict_size}b"
+
         try:
             cmd = [
                 self.seven_zip_path,
@@ -59,7 +64,7 @@ class CASTCompressor:
                 "-txz",
                 "-mx=9",
                 "-mmt=on",
-                "-m0=lzma2:d128m",
+                dict_arg,  # Uses the passed size
                 "-y",
                 "-bb0",
                 "-si",
@@ -80,6 +85,7 @@ class CASTCompressor:
             return compressed_data
         except Exception as e:
             print(f"[!] 7z Backend failed ({e}). Falling back to native LZMA.")
+            # FALLBACK UNCHANGED: Uses preset logic as requested
             return lzma.compress(data, preset=9 | lzma.PRESET_EXTREME)
 
     def _is_likely_binary(self, data_sample: Union[bytes, str]) -> bool:
@@ -141,8 +147,11 @@ class CASTCompressor:
         masked_line = self.active_pattern.sub(replace_callback, line)
         return masked_line, variables
 
+    # CHANGED: Added dict_size with default
     def compress(
-            self, input_data: Union[bytes, str]
+            self,
+            input_data: Union[bytes, str],
+            dict_size: int = 128 * 1024 * 1024
     ) -> Tuple[bytes, bytes, bytes, int, str]:
 
         # --- 1. DECODING ---
@@ -150,7 +159,7 @@ class CASTCompressor:
 
         if isinstance(input_data, bytes):
             if self._is_likely_binary(input_data):
-                return self._create_passthrough(input_data, "Passthrough [Binary]")
+                return self._create_passthrough(input_data, "Passthrough [Binary]", dict_size)
             try:
                 text_data = input_data.decode("utf-8")
             except UnicodeDecodeError:
@@ -159,7 +168,7 @@ class CASTCompressor:
                     is_latin1 = True
                 except:
                     return self._create_passthrough(
-                        input_data, "Passthrough [DecodeFail]"
+                        input_data, "Passthrough [DecodeFail]", dict_size
                     )
         else:
             text_data = input_data
@@ -177,7 +186,7 @@ class CASTCompressor:
 
             result = self._mask_line(line)
             if result is None:
-                return self._create_passthrough(input_data, "Collision Protected")
+                return self._create_passthrough(input_data, "Collision Protected", dict_size)
 
             skeleton, vars_found = result
 
@@ -185,7 +194,7 @@ class CASTCompressor:
                 t_id = self.template_map[skeleton]
             else:
                 if self.next_template_id > unique_limit:
-                    return self._create_passthrough(text_data, "Passthrough [Entropy]")
+                    return self._create_passthrough(text_data, "Passthrough [Entropy]", dict_size)
 
                 t_id = self.next_template_id
                 self.template_map[skeleton] = t_id
@@ -200,7 +209,6 @@ class CASTCompressor:
                 current_columns[i].append(vars_found[i])
 
         # --- 3. HEURISTIC (STRICTLY IDENTICAL TO RUST) ---
-        # The decision logic relies purely on data properties, NOT on the backend availability.
         num_templates = len(self.skeletons_list)
         decision_mode = "UNIFIED"
 
@@ -300,12 +308,12 @@ class CASTCompressor:
 
         # --- 5. COMPRESSION (BACKEND AGNOSTIC) ---
         if decision_mode == "SPLIT":
-            # Call backend 3 times (even if it's 7z process overhead, consistency comes first)
             if self.seven_zip_path:
-                c_reg = self._7z_compress(raw_registry)
-                c_ids = self._7z_compress(raw_ids)
-                c_vars = self._7z_compress(vars_buffer)
+                c_reg = self._7z_compress(raw_registry, dict_size)
+                c_ids = self._7z_compress(raw_ids, dict_size)
+                c_vars = self._7z_compress(vars_buffer, dict_size)
             else:
+                # FALLBACK UNCHANGED
                 c_reg = lzma.compress(raw_registry, preset=9)
                 c_ids = lzma.compress(raw_ids, preset=9)
                 c_vars = lzma.compress(vars_buffer, preset=9 | lzma.PRESET_EXTREME)
@@ -319,13 +327,14 @@ class CASTCompressor:
             solid_block = internal_header + raw_registry + raw_ids + vars_buffer
 
             if self.seven_zip_path:
-                c_solid = self._7z_compress(solid_block)
+                c_solid = self._7z_compress(solid_block, dict_size)
             else:
+                # UNIFIED FALLBACK: Here we update dict_size because it was already explicit
                 filters_unified = [
                     {
                         "id": lzma.FILTER_LZMA2,
                         "preset": 9 | lzma.PRESET_EXTREME,
-                        "dict_size": 128 * 1024 * 1024,
+                        "dict_size": dict_size,  # Updated to use param
                     }
                 ]
                 c_solid = lzma.compress(
@@ -335,7 +344,10 @@ class CASTCompressor:
             return b"", b"", c_solid, id_mode_flag, self.mode_name
 
     def _create_passthrough(
-            self, data: Union[bytes, str], reason: str = "Passthrough"
+            self,
+            data: Union[bytes, str],
+            reason: str = "Passthrough",
+            dict_size: int = 128 * 1024 * 1024
     ) -> Tuple[bytes, bytes, bytes, int, str]:
         if isinstance(data, str):
             data_bytes = data.encode("utf-8")
@@ -343,8 +355,9 @@ class CASTCompressor:
             data_bytes = data
 
         if self.seven_zip_path:
-            c_vars = self._7z_compress(data_bytes)
+            c_vars = self._7z_compress(data_bytes, dict_size)
         else:
+            # FALLBACK UNCHANGED
             c_vars = lzma.compress(data_bytes, preset=9 | lzma.PRESET_EXTREME)
 
         return b"", b"", c_vars, 255, reason
