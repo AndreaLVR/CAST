@@ -11,13 +11,17 @@ from typing import List, Tuple, Union, Optional
 
 class CASTCompressor:
     """
-    Handles the compression of structured data using the CAST (Columnar Agnostic Structural Transformation) algorithm.
-    Includes Latin-1 fallback for binary-dirty CSVs.
+    Handles the compression of structured data using the CAST algorithm.
+    LOGIC STRICTLY ALIGNED WITH RUST IMPLEMENTATION.
 
-    SYSTEM MODE SUPPORT:
-    If '7z' is found (via SEVEN_ZIP_PATH or PATH), it is used as the backend compressor
-    instead of Python's native lzma module. This significantly improves performance.
+    Backend: Uses system '7z' if available, otherwise native lzma.
+    Algorithm: Heuristic for SPLIT vs UNIFIED is independent of the backend.
     """
+
+    # --- CONSTANTS (PRIVATE USE AREA - SAFE) ---
+    VAR_PLACEHOLDER = "\uE000"
+    VAR_PLACEHOLDER_QUOTE = '"\uE000"'
+    REG_SEP = "\uE001"
 
     def __init__(self) -> None:
         self.template_map = {}
@@ -40,19 +44,15 @@ class CASTCompressor:
             self.mode_name += " (System 7z)"
 
     def _find_7z(self) -> Optional[str]:
-        # Priority 1: Environment Variable
         env_path = os.environ.get("SEVEN_ZIP_PATH")
         if env_path and os.path.exists(env_path):
             return env_path
-
-        # Priority 2: System PATH
-        sys_path = shutil.which("7z") or shutil.which("7za")
-        return sys_path
+        return shutil.which("7z") or shutil.which("7za")
 
     def _7z_compress(self, data: bytes) -> bytes:
         """Pipes data to external 7z executable for compression."""
+        if not data: return b""  # Empty buffer protection
         try:
-            # Arguments ported from Rust implementation
             cmd = [
                 self.seven_zip_path,
                 "a",
@@ -66,8 +66,6 @@ class CASTCompressor:
                 "-so",
                 "-an"
             ]
-
-            # Suppress stderr to keep CLI clean
             process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
@@ -76,13 +74,12 @@ class CASTCompressor:
             )
             compressed_data, _ = process.communicate(input=data)
 
-            if process.returncode != 0 or not compressed_data:
+            if process.returncode != 0:
                 raise Exception(f"7z returned code {process.returncode}")
 
             return compressed_data
         except Exception as e:
             print(f"[!] 7z Backend failed ({e}). Falling back to native LZMA.")
-            # Fallback to native if 7z crashes
             return lzma.compress(data, preset=9 | lzma.PRESET_EXTREME)
 
     def _is_likely_binary(self, data_sample: Union[bytes, str]) -> bool:
@@ -110,7 +107,7 @@ class CASTCompressor:
 
         strict_templates = set()
         for line in sample_lines:
-            skel = self.regex_strict.sub(lambda m: "\x00", line)
+            skel = self.regex_strict.sub(lambda m: self.VAR_PLACEHOLDER, line)
             strict_templates.add(skel)
 
         ratio = len(strict_templates) / len(sample_lines)
@@ -121,23 +118,25 @@ class CASTCompressor:
             self.active_pattern = self.regex_strict
             base_mode = "Strict"
 
-        # Update mode name preserving 7z tag
         if "7z" in self.mode_name:
             self.mode_name = f"{base_mode} (System 7z)"
         else:
             self.mode_name = base_mode
 
-    def _mask_line(self, line: str) -> Tuple[str, List[str]]:
+    def _mask_line(self, line: str) -> Optional[Tuple[str, List[str]]]:
+        if self.VAR_PLACEHOLDER in line or self.REG_SEP in line:
+            return None
+
         variables = []
 
         def replace_callback(match):
             token = match.group(0)
             if token.startswith('"'):
                 variables.append(token[1:-1])
-                return '"\x00"'
+                return self.VAR_PLACEHOLDER_QUOTE
             else:
                 variables.append(token)
-                return "\x00"
+                return self.VAR_PLACEHOLDER
 
         masked_line = self.active_pattern.sub(replace_callback, line)
         return masked_line, variables
@@ -146,7 +145,7 @@ class CASTCompressor:
             self, input_data: Union[bytes, str]
     ) -> Tuple[bytes, bytes, bytes, int, str]:
 
-        # --- 1. DECODING & LATIN-1 CHECK ---
+        # --- 1. DECODING ---
         is_latin1 = False
 
         if isinstance(input_data, bytes):
@@ -156,7 +155,6 @@ class CASTCompressor:
                 text_data = input_data.decode("utf-8")
             except UnicodeDecodeError:
                 try:
-                    # Fallback critico per file come BX_Books.csv
                     text_data = input_data.decode("latin-1")
                     is_latin1 = True
                 except:
@@ -176,7 +174,12 @@ class CASTCompressor:
         for line in lines:
             if not line:
                 continue
-            skeleton, vars_found = self._mask_line(line)
+
+            result = self._mask_line(line)
+            if result is None:
+                return self._create_passthrough(input_data, "Collision Protected")
+
+            skeleton, vars_found = result
 
             if skeleton in self.template_map:
                 t_id = self.template_map[skeleton]
@@ -196,31 +199,28 @@ class CASTCompressor:
             for i in range(limit):
                 current_columns[i].append(vars_found[i])
 
-        # --- 3. HEURISTIC & OPTIMIZATION ---
+        # --- 3. HEURISTIC (STRICTLY IDENTICAL TO RUST) ---
+        # The decision logic relies purely on data properties, NOT on the backend availability.
         num_templates = len(self.skeletons_list)
         decision_mode = "UNIFIED"
 
-        # If 7z is available, we force UNIFIED mode because 7z is a stream compressor
-        # and handles mixed data better than splitting into small chunks for lzma python.
-        if not self.seven_zip_path:
-            # Only use Python splitting logic if we don't have 7z
-            if num_templates < 256:
-                sample_buffer = bytearray()
-                count = 0
-                for t_id in range(min(len(self.skeletons_list), 5)):
-                    for val_list in self.columns_storage[t_id]:
-                        for v in val_list[:50]:
-                            sample_buffer.extend(v.encode("utf-8"))
-                            count += 1
-                        if count > 2000:
-                            break
+        if num_templates < 256:
+            sample_buffer = bytearray()
+            count = 0
+            for t_id in range(min(len(self.skeletons_list), 5)):
+                for val_list in self.columns_storage[t_id]:
+                    for v in val_list[:50]:
+                        sample_buffer.extend(v.encode("utf-8"))
+                        count += 1
+                    if count > 2000:
+                        break
 
-                if len(sample_buffer) > 0:
-                    c_sample = zlib.compress(sample_buffer, level=1)
-                    if len(c_sample) > 0:
-                        ratio = len(sample_buffer) / len(c_sample)
-                        if ratio < 3.0:
-                            decision_mode = "SPLIT"
+            if len(sample_buffer) > 0:
+                c_sample = zlib.compress(sample_buffer, level=1)
+                if len(c_sample) > 0:
+                    ratio = len(sample_buffer) / len(c_sample)
+                    if ratio < 3.0:
+                        decision_mode = "SPLIT"
 
         # Remap IDs for Unified
         if decision_mode == "UNIFIED":
@@ -244,9 +244,8 @@ class CASTCompressor:
             self.columns_storage = new_columns_storage
             self.stream_template_ids = new_stream_template_ids
 
-        # --- 4. SERIALIZATION ---
-        REG_SEP = "\x1e"
-        raw_registry = REG_SEP.join(self.skeletons_list).encode("utf-8")
+        # --- 4. SERIALIZATION (ALWAYS ESCAPED) ---
+        raw_registry = self.REG_SEP.join(self.skeletons_list).encode("utf-8")
 
         if num_templates == 1:
             raw_ids = b""
@@ -267,27 +266,20 @@ class CASTCompressor:
             )
             id_mode_flag = 0
 
-        # Inject Latin-1 Flag (Bit 0x80)
         if is_latin1:
             id_mode_flag |= 0x80
 
-        # --- SEPARATORS ---
-        if decision_mode == "SPLIT":
-            ROW_SEP = b"\x00"
-            COL_SEP = b"\xff\xff"
-            ESCAPE_NEEDED = False
-        else:
-            ROW_SEP = b"\x00"
-            COL_SEP = b"\x02"  # Safe unified separator
-            ESCAPE_NEEDED = True
+        # Constants for Byte Stuffing
+        B_ESC = b"\x01"
+        B_ROW = b"\x00"
+        B_COL = b"\x02"
+        SEQ_ESC = b"\x01\x01"
+        SEQ_ROW = b"\x01\x00"
+        SEQ_COL = b"\x01\x03"
 
-            B_ESC = b"\x01"
-            B_ROW = b"\x00"
-            B_COL = b"\x02"
-
-            SEQ_ESC = b"\x01\x01"
-            SEQ_ROW = b"\x01\x00"
-            SEQ_COL = b"\x01\x03"
+        # ALWAYS SAFE MODE
+        ROW_SEP = b"\x00"
+        COL_SEP = b"\x02"
 
         vars_buffer = bytearray()
         for t_id in range(len(self.skeletons_list)):
@@ -296,37 +288,39 @@ class CASTCompressor:
                 encoded_values = []
                 for v in values_list:
                     v_bytes = v.encode("utf-8")
-                    if ESCAPE_NEEDED:
-                        # Apply escaping
-                        v_bytes = v_bytes.replace(B_ESC, SEQ_ESC)
-                        v_bytes = v_bytes.replace(B_ROW, SEQ_ROW)
-                        v_bytes = v_bytes.replace(B_COL, SEQ_COL)
-
+                    # Force Escaping
+                    v_bytes = v_bytes.replace(B_ESC, SEQ_ESC)
+                    v_bytes = v_bytes.replace(B_ROW, SEQ_ROW)
+                    v_bytes = v_bytes.replace(B_COL, SEQ_COL)
                     encoded_values.append(v_bytes)
 
                 col_blob = ROW_SEP.join(encoded_values)
                 vars_buffer.extend(col_blob)
                 vars_buffer.extend(COL_SEP)
 
-        # --- 5. COMPRESSION ---
+        # --- 5. COMPRESSION (BACKEND AGNOSTIC) ---
         if decision_mode == "SPLIT":
-            # This path is usually only taken if 7z is NOT present
-            c_reg = lzma.compress(raw_registry, preset=9)
-            c_ids = lzma.compress(raw_ids, preset=9)
-            c_vars = lzma.compress(vars_buffer, preset=9 | lzma.PRESET_EXTREME)
+            # Call backend 3 times (even if it's 7z process overhead, consistency comes first)
+            if self.seven_zip_path:
+                c_reg = self._7z_compress(raw_registry)
+                c_ids = self._7z_compress(raw_ids)
+                c_vars = self._7z_compress(vars_buffer)
+            else:
+                c_reg = lzma.compress(raw_registry, preset=9)
+                c_ids = lzma.compress(raw_ids, preset=9)
+                c_vars = lzma.compress(vars_buffer, preset=9 | lzma.PRESET_EXTREME)
+
             return c_reg, c_ids, c_vars, id_mode_flag, self.mode_name
         else:
-            # Unified Mode (Default for 7z)
+            # Unified
             len_reg = len(raw_registry)
             len_ids = len(raw_ids)
             internal_header = struct.pack("<II", len_reg, len_ids)
             solid_block = internal_header + raw_registry + raw_ids + vars_buffer
 
             if self.seven_zip_path:
-                # SYSTEM MODE: Use 7-Zip
                 c_solid = self._7z_compress(solid_block)
             else:
-                # NATIVE MODE: Use LZMA module
                 filters_unified = [
                     {
                         "id": lzma.FILTER_LZMA2,
@@ -359,12 +353,13 @@ class CASTCompressor:
 class CASTDecompressor:
     """
     Handles the decompression of CAST-encoded data streams.
-    Fully compatible with Rust Latin-1 Flag fix.
-    Supports 7-Zip backend for decompression if available.
+    Safe & Lossless (Always Escaped).
     """
 
+    VAR_PLACEHOLDER = "\uE000"
+    REG_SEP = "\uE001"
+
     def __init__(self):
-        # We need to find 7z for decompression too
         self.seven_zip_path = self._find_7z()
 
     def _find_7z(self) -> Optional[str]:
@@ -372,27 +367,21 @@ class CASTDecompressor:
         if env_path and os.path.exists(env_path): return env_path
         return shutil.which("7z") or shutil.which("7za")
 
-    def _7z_decompress(self, data: bytes) -> bytes:
-        try:
-            # 7z e -txz -si -so
-            cmd = [self.seven_zip_path, "e", "-txz", "-si", "-so"]
-            process = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL
-            )
-            out, _ = process.communicate(input=data)
-            if process.returncode != 0: raise Exception("Non-zero exit")
-            return out
-        except:
-            # Silent fallback to native
-            return lzma.decompress(data)
-
     def _decompress_payload(self, data: bytes) -> bytes:
-        """Decides whether to use 7z or native lzma."""
         if self.seven_zip_path:
-            return self._7z_decompress(data)
+            try:
+                cmd = [self.seven_zip_path, "e", "-txz", "-si", "-so"]
+                process = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL
+                )
+                out, _ = process.communicate(input=data)
+                if process.returncode != 0: raise Exception("Non-zero exit")
+                return out
+            except:
+                pass
         return lzma.decompress(data)
 
     def decompress(
@@ -414,29 +403,20 @@ class CASTDecompressor:
         real_id_flag = id_mode_flag & 0x7F
 
         is_unified = len(c_registry) == 0 and len(c_ids) == 0
-        REG_SEP = "\x1e"
 
+        # Constants for Unescaping
+        SEQ_ESC = b"\x01\x01"
+        SEQ_ROW = b"\x01\x00"
+        SEQ_COL = b"\x01\x03"
+        B_ESC = b"\x01"
+        B_ROW = b"\x00"
+        B_COL = b"\x02"
+        COL_SEP_BYTE = b"\x02"
+        ROW_SEP_BYTE = b"\x00"
+
+        # --- 2. DECOMPRESSION ---
         if is_unified:
-            ROW_SEP = b"\x00"
-            COL_SEP = b"\x02"
-            ESCAPE_NEEDED = True
-
-            SEQ_ESC = b"\x01\x01"
-            SEQ_ROW = b"\x01\x00"
-            SEQ_COL = b"\x01\x03"
-            B_ESC = b"\x01"
-            B_ROW = b"\x00"
-            B_COL = b"\x02"
-        else:
-            ROW_SEP = b"\x00"
-            COL_SEP = b"\xff\xff"
-            ESCAPE_NEEDED = False
-
-        # --- 2. DECOMPRESSION & PARSING ---
-        if is_unified:
-            # Here we use the backend-aware decompression
             full_payload = self._decompress_payload(c_vars)
-
             len_reg, len_ids = struct.unpack("<II", full_payload[:8])
             offset = 8
             reg_data_bytes = full_payload[offset: offset + len_reg]
@@ -450,26 +430,24 @@ class CASTDecompressor:
             vars_data_bytes = full_payload[offset:]
 
             reg_data = reg_data_bytes.decode("utf-8")
-            skeletons = reg_data.split(REG_SEP)
+            skeletons = reg_data.split(self.REG_SEP)
 
             if real_id_flag == 3:
                 template_ids = []
             else:
                 template_ids = self._unpack_ids(ids_data_bytes, real_id_flag)
-
-            raw_columns = vars_data_bytes.split(COL_SEP)
         else:
-            # Legacy Split Mode (Native LZMA only usually, but let's be safe)
-            reg_payload = lzma.decompress(c_registry)
+            reg_payload = self._decompress_payload(c_registry)
             reg_data = reg_payload.decode("utf-8")
-            skeletons = reg_data.split(REG_SEP)
+            skeletons = reg_data.split(self.REG_SEP)
 
-            ids_data = lzma.decompress(c_ids)
+            ids_data = self._decompress_payload(c_ids)
             template_ids = self._unpack_ids(ids_data, real_id_flag)
 
-            vars_data = self._decompress_payload(c_vars)
-            raw_columns = vars_data.split(COL_SEP)
+            vars_data_bytes = self._decompress_payload(c_vars)
 
+        # --- 3. COLUMN RECONSTRUCTION ---
+        raw_columns = vars_data_bytes.split(COL_SEP_BYTE)
         if raw_columns and not raw_columns[-1]:
             raw_columns.pop()
 
@@ -478,30 +456,27 @@ class CASTDecompressor:
 
         skeleton_parts_cache = []
         for s in skeletons:
-            parts = [p.encode("utf-8") for p in s.split("\x00")]
+            parts = [p.encode("utf-8") for p in s.split(self.VAR_PLACEHOLDER)]
             skeleton_parts_cache.append(parts)
 
-        # --- 3. COLUMN RECONSTRUCTION ---
         for t_id, skel in enumerate(skeletons):
-            num_vars = skel.count("\x00")
+            num_vars = skel.count(self.VAR_PLACEHOLDER)
             columns_storage[t_id] = []
 
             for _ in range(num_vars):
                 if col_idx_counter < len(raw_columns):
                     col_bytes = raw_columns[col_idx_counter]
-                    raw_vals = col_bytes.split(ROW_SEP)
+                    raw_vals = col_bytes.split(ROW_SEP_BYTE)
 
-                    if ESCAPE_NEEDED:
-                        decoded_vals = []
-                        for v in raw_vals:
-                            v = v.replace(SEQ_COL, B_COL)
-                            v = v.replace(SEQ_ROW, B_ROW)
-                            v = v.replace(SEQ_ESC, B_ESC)
-                            decoded_vals.append(v)
-                        columns_storage[t_id].append(iter(decoded_vals))
-                    else:
-                        columns_storage[t_id].append(iter(raw_vals))
+                    # Unescaping Logic
+                    decoded_vals = []
+                    for v in raw_vals:
+                        v = v.replace(SEQ_COL, B_COL)
+                        v = v.replace(SEQ_ROW, B_ROW)
+                        v = v.replace(SEQ_ESC, B_ESC)
+                        decoded_vals.append(v)
 
+                    columns_storage[t_id].append(iter(decoded_vals))
                     col_idx_counter += 1
 
         # --- 4. STREAM RECONSTRUCTION ---
@@ -511,12 +486,12 @@ class CASTDecompressor:
         if real_id_flag == 3:
             parts = skeleton_parts_cache[0]
             queues = columns_storage[0]
-            for vars_tuple in zip(*queues):
-                row_components = [b""] * (len(parts) + len(vars_tuple))
-                row_components[::2] = parts
-                row_components[1::2] = vars_tuple
-                buf_append(b"".join(row_components))
-
+            if queues:
+                for vars_tuple in zip(*queues):
+                    row_components = [b""] * (len(parts) + len(vars_tuple))
+                    row_components[::2] = parts
+                    row_components[1::2] = vars_tuple
+                    buf_append(b"".join(row_components))
         else:
             for t_id in template_ids:
                 parts = skeleton_parts_cache[t_id]
@@ -560,4 +535,3 @@ class CASTDecompressor:
             return struct.unpack(f"<{num_bytes // 4}I", ids_bytes)
         else:
             return struct.unpack(f"<{num_bytes // 2}H", ids_bytes)
-
