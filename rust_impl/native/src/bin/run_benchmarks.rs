@@ -37,7 +37,21 @@ fn main() {
         }
     }
 
-    // 3. Parsing --list
+    // 3. Parsing --dict-size <SIZE> (NEW)
+    let mut dict_size_bytes: u32 = 128 * 1024 * 1024; // Default 128 MB
+    if let Some(pos) = args.iter().position(|arg| arg == "--dict-size") {
+        if pos + 1 < args.len() {
+            let val = &args[pos+1];
+            if let Some(s) = parse_size(val) {
+                dict_size_bytes = s as u32;
+            } else {
+                eprintln!("[!]  Error: Invalid dict size format: '{}'.", val);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // 4. Parsing --list
     let list_path_opt = args.windows(2)
         .find(|w| w[0] == "--list")
         .map(|w| w[1].clone());
@@ -48,7 +62,7 @@ fn main() {
     }
     let list_path = list_path_opt.unwrap();
 
-    // 4. Parsing --compare-with
+    // 5. Parsing --compare-with
     let competitors_opt = args.windows(2)
         .find(|w| w[0] == "--compare-with")
         .map(|w| w[1].clone());
@@ -93,12 +107,12 @@ fn main() {
     println!("--------------------------------------------------");
     println!("Mode:               {}", if use_multithread { format!("MULTITHREAD ({} threads)", threads) } else { "SOLID (1 thread)".to_string() });
 
-    // Mostra info chunking specifica per CAST
     if let Some(cs) = chunk_size_bytes {
         println!("CAST Chunking:      ACTIVE ({} per block)", format_bytes(cs));
     } else {
         println!("CAST Chunking:      DISABLED (Global Optimization)");
     }
+    println!("LZMA Dict Size:     {}", format_bytes(dict_size_bytes as usize));
     println!("Competitors:        {:?} (Always Global/Solid)", competitors);
     println!("Files to test:      {}", files_to_test.len());
     println!("--------------------------------------------------\n");
@@ -118,21 +132,20 @@ fn main() {
         let mut results = Vec::new();
 
         // ---------------------------------------------------------
-        // FASE 1: CAST (Chunked o Solid a seconda dei flag)
+        // FASE 1: CAST (Passiamo dict_size_bytes)
         // ---------------------------------------------------------
         if let Some(chunk_size) = chunk_size_bytes {
-            run_cast_chunked_only(&file_path, chunk_size, file_len, use_multithread, &mut results);
+            run_cast_chunked_only(&file_path, chunk_size, file_len, use_multithread, dict_size_bytes, &mut results);
         } else {
-            // Se CAST è solid, dobbiamo leggere il file
              let data = match std::fs::read(&file_path) {
                 Ok(d) => d,
                 Err(e) => { eprintln!("[!]  Read Error: {}", e); continue; }
             };
-            run_cast_solid_only(&data, use_multithread, &mut results);
+            run_cast_solid_only(&data, use_multithread, dict_size_bytes, &mut results);
         }
 
         // ---------------------------------------------------------
-        // FASE 2: COMPETITORS (SEMPRE SOLID/GLOBAL)
+        // FASE 2: COMPETITORS (Passiamo dict_size_bytes per LZMA)
         // ---------------------------------------------------------
         if !competitors.is_empty() {
             let full_data = match std::fs::read(&file_path) {
@@ -142,7 +155,7 @@ fn main() {
 
             if !full_data.is_empty() {
                 for algo in &competitors {
-                    run_competitor_solid(algo, &full_data, use_multithread, &mut results);
+                    run_competitor_solid(algo, &full_data, use_multithread, dict_size_bytes, &mut results);
                 }
             }
         }
@@ -206,13 +219,14 @@ fn main() {
 
 // --- CAST LOGIC ONLY ---
 
-fn run_cast_solid_only(data: &[u8], multithread: bool, results: &mut Vec<BenchmarkResult>) {
+fn run_cast_solid_only(data: &[u8], multithread: bool, dict_size: u32, results: &mut Vec<BenchmarkResult>) {
     let orig_len = data.len();
     print!("\n[*] Running CAST (Global)...");
     io::stdout().flush().unwrap();
 
     let start = Instant::now();
-    let mut compressor = CASTCompressor::new(multithread);
+    // CHANGED: Pass dict_size
+    let mut compressor = CASTCompressor::new(multithread, dict_size);
     let (r, i, v, flag, _) = compressor.compress(data);
     let duration = start.elapsed().as_secs_f64();
     let size = 17 + r.len() + i.len() + v.len();
@@ -231,14 +245,13 @@ fn run_cast_solid_only(data: &[u8], multithread: bool, results: &mut Vec<Benchma
         decompressor.decompress(&r, &i, &v, expected_crc, flag)
     });
 
-    // *** CORREZIONE QUI ***
     match check {
         Ok(res) => if res == data { println!("OK]"); } else { println!("FAIL - Mismatch]"); },
-        Err(_) => println!("CRASH]"), // Era: println!("CRASH]");
+        Err(_) => println!("CRASH]"),
     }
 }
 
-fn run_cast_chunked_only(file_path: &str, chunk_size: usize, file_len: usize, multithread: bool, results: &mut Vec<BenchmarkResult>) {
+fn run_cast_chunked_only(file_path: &str, chunk_size: usize, file_len: usize, multithread: bool, dict_size: u32, results: &mut Vec<BenchmarkResult>) {
     print!("\n[*] Running CAST (Chunked)...");
     io::stdout().flush().unwrap();
 
@@ -265,7 +278,8 @@ fn run_cast_chunked_only(file_path: &str, chunk_size: usize, file_len: usize, mu
 
         // Compress
         let start = Instant::now();
-        let mut compressor = CASTCompressor::new(multithread);
+        // CHANGED: Pass dict_size
+        let mut compressor = CASTCompressor::new(multithread, dict_size);
         let (r, i, v, flag, _) = compressor.compress(chunk_data);
         total_time += start.elapsed().as_secs_f64();
 
@@ -296,7 +310,7 @@ fn run_cast_chunked_only(file_path: &str, chunk_size: usize, file_len: usize, mu
 
 // --- COMPETITORS LOGIC (ALWAYS SOLID) ---
 
-fn run_competitor_solid(algo: &str, data: &[u8], multithread: bool, results: &mut Vec<BenchmarkResult>) {
+fn run_competitor_solid(algo: &str, data: &[u8], multithread: bool, dict_size: u32, results: &mut Vec<BenchmarkResult>) {
     let orig_len = data.len();
     match algo {
         "lzma2" => {
@@ -304,7 +318,8 @@ fn run_competitor_solid(algo: &str, data: &[u8], multithread: bool, results: &mu
             print!("\n[*] Running {} (XZ - Global)...", name);
             io::stdout().flush().unwrap();
             let start = Instant::now();
-            let c = compress_buffer_native(data, multithread);
+            // CHANGED: Pass dict_size (This maintains Parity!)
+            let c = compress_buffer_native(data, multithread, dict_size);
             let duration = start.elapsed().as_secs_f64();
             let size = c.len();
             print_result(duration, size, orig_len);
