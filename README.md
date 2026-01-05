@@ -158,7 +158,7 @@ If you use CAST in your research or production pipeline, please cite it as:
 @software{cast,
   author = {Olivari, Andrea},
   title = {CAST: Columnar Agnostic Structural Transformation},
-  year = {2025},
+  year = {2026},
   url = {https://github.com/AndreaLVR/CAST},
   note = {A Schema-less Structural Preprocessing Algorithm for Improving General-Purpose Compression on Structured Data.}
 }
