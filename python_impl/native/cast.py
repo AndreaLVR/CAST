@@ -88,8 +88,11 @@ class CASTCompressor:
         masked_line = self.active_pattern.sub(replace_callback, line)
         return masked_line, variables
 
+    # CHANGED: Added dict_size optional parameter (Default None to preserve legacy behavior)
     def compress(
-        self, input_data: Union[bytes, str]
+            self,
+            input_data: Union[bytes, str],
+            dict_size: Optional[int] = None
     ) -> Tuple[bytes, bytes, bytes, int, str]:
         # --- 1. DECODING & LATIN-1 CHECK ---
         is_latin1 = False
@@ -191,7 +194,6 @@ class CASTCompressor:
             self.stream_template_ids = new_stream_template_ids
 
         # --- 4. SERIALIZATION (ALWAYS ESCAPED) ---
-        # Usiamo il separatore sicuro per il registro
         raw_registry = self.REG_SEP.join(self.skeletons_list).encode("utf-8")
 
         if num_templates == 1:
@@ -226,7 +228,6 @@ class CASTCompressor:
         SEQ_ROW = b"\x01\x00"
         SEQ_COL = b"\x01\x03"
 
-        # FIX: Always use Escaped separators (Safe Mode)
         ROW_SEP = b"\x00"
         COL_SEP = b"\x02"
 
@@ -252,9 +253,23 @@ class CASTCompressor:
 
         # --- 5. COMPRESSION ---
         if decision_mode == "SPLIT":
-            c_reg = lzma.compress(raw_registry, preset=9)
-            c_ids = lzma.compress(raw_ids, preset=9)
-            c_vars = lzma.compress(vars_buffer, preset=9 | lzma.PRESET_EXTREME)
+            # CHANGED: If dict_size is provided, we MUST use filters.
+            # If not (None), we use preset=9 to guarantee EXACT same behavior as before.
+            if dict_size is not None:
+                custom_filters = [{
+                    "id": lzma.FILTER_LZMA2,
+                    "preset": 9 | lzma.PRESET_EXTREME,
+                    "dict_size": dict_size
+                }]
+                c_reg = lzma.compress(raw_registry, check=lzma.CHECK_CRC32, filters=custom_filters)
+                c_ids = lzma.compress(raw_ids, check=lzma.CHECK_CRC32, filters=custom_filters)
+                c_vars = lzma.compress(vars_buffer, check=lzma.CHECK_CRC32, filters=custom_filters)
+            else:
+                # LEGACY PATH (Identical to previous code)
+                c_reg = lzma.compress(raw_registry, preset=9)
+                c_ids = lzma.compress(raw_ids, preset=9)
+                c_vars = lzma.compress(vars_buffer, preset=9 | lzma.PRESET_EXTREME)
+
             return c_reg, c_ids, c_vars, id_mode_flag, self.mode_name
         else:
             len_reg = len(raw_registry)
@@ -262,11 +277,14 @@ class CASTCompressor:
             internal_header = struct.pack("<II", len_reg, len_ids)
             solid_block = internal_header + raw_registry + raw_ids + vars_buffer
 
+            # Determine dict size (Use passed value OR fallback to standard 128MB)
+            final_dict_size = dict_size if dict_size is not None else 128 * 1024 * 1024
+
             filters_unified = [
                 {
                     "id": lzma.FILTER_LZMA2,
                     "preset": 9 | lzma.PRESET_EXTREME,
-                    "dict_size": 128 * 1024 * 1024,
+                    "dict_size": final_dict_size,  # CHANGED: Dynamic
                 }
             ]
             c_solid = lzma.compress(
@@ -275,7 +293,7 @@ class CASTCompressor:
             return b"", b"", c_solid, id_mode_flag, self.mode_name
 
     def _create_passthrough(
-        self, data: Union[bytes, str], reason: str = "Passthrough"
+            self, data: Union[bytes, str], reason: str = "Passthrough"
     ) -> Tuple[bytes, bytes, bytes, int, str]:
         if isinstance(data, str):
             data_bytes = data.encode("utf-8")
@@ -297,12 +315,12 @@ class CASTDecompressor:
     REG_SEP = "\uE001"
 
     def decompress(
-        self,
-        c_registry: bytes,
-        c_ids: bytes,
-        c_vars: bytes,
-        expected_crc: Optional[int] = None,
-        id_mode_flag: int = 0,
+            self,
+            c_registry: bytes,
+            c_ids: bytes,
+            c_vars: bytes,
+            expected_crc: Optional[int] = None,
+            id_mode_flag: int = 0,
     ) -> bytes:
         if id_mode_flag == 255:
             data = lzma.decompress(c_vars)
@@ -333,13 +351,13 @@ class CASTDecompressor:
             full_payload = lzma.decompress(c_vars)
             len_reg, len_ids = struct.unpack("<II", full_payload[:8])
             offset = 8
-            reg_data_bytes = full_payload[offset : offset + len_reg]
+            reg_data_bytes = full_payload[offset: offset + len_reg]
             offset += len_reg
 
             if real_id_flag == 3:
                 ids_data_bytes = b""
             else:
-                ids_data_bytes = full_payload[offset : offset + len_ids]
+                ids_data_bytes = full_payload[offset: offset + len_ids]
                 offset += len_ids
             vars_data_bytes = full_payload[offset:]
 

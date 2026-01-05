@@ -13,6 +13,7 @@ except ImportError:
 
 def format_bytes(n):
     """Formats bytes with commas for readability (e.g. 1,024,000 bytes)."""
+    if n is None: return "Default"
     return f"{n:,} bytes"
 
 
@@ -24,9 +25,9 @@ def parse_human_size(size_str):
     s = size_str.strip().upper()
     try:
         if s.endswith("GB"):
-            return int(float(s[:-2]) * 1024 ** 3)
+            return int(float(s[:-2]) * 1024**3)
         elif s.endswith("MB"):
-            return int(float(s[:-2]) * 1024 ** 2)
+            return int(float(s[:-2]) * 1024**2)
         elif s.endswith("KB"):
             return int(float(s[:-2]) * 1024)
         elif s.endswith("B"):
@@ -34,7 +35,9 @@ def parse_human_size(size_str):
         else:
             return int(s)
     except ValueError:
-        print(f"[!] Error: Invalid chunk size format '{size_str}'. Using default (Solid).")
+        print(
+            f"[!] Error: Invalid chunk size format '{size_str}'. Using default (Solid)."
+        )
         return None
 
 
@@ -44,6 +47,7 @@ def print_usage():
     print("Usage:")
     print("  COMPRESS:   python cli.py -c <in> <out> [options]")
     print("    --chunk-size <SIZE>  : Split processing (e.g., '100MB', '1GB')")
+    print("    --dict-size <SIZE>   : LZMA Dictionary Size (Default: 128MB)")
     print("    -v / --verify        : Post-creation integrity check")
     print("")
     print("  DECOMPRESS: python cli.py -d <in> <out>")
@@ -51,11 +55,19 @@ def print_usage():
 
 
 # --- COMPRESSION ---
-def do_compress(input_path, output_path, chunk_size=None, verify=False):
+# CHANGED: Added dict_size parameter
+def do_compress(input_path, output_path, chunk_size=None, dict_size=None, verify=False):
     start_total = time.time()
 
-    mode_str = f"CHUNKED ({format_bytes(chunk_size)})" if chunk_size else "SOLID (Single Block)"
+    mode_str = (
+        f"CHUNKED ({format_bytes(chunk_size)})"
+        if chunk_size
+        else "SOLID (Single Block)"
+    )
+    dict_str = format_bytes(dict_size) if dict_size else "Default (128MB)"
+
     print(f"      Mode:       {mode_str}")
+    print(f"      Dict Size:  {dict_str}")
     print("\n[*]    Starting Compression...")
 
     total_input_processed = 0
@@ -79,14 +91,19 @@ def do_compress(input_path, output_path, chunk_size=None, verify=False):
                 total_input_processed += chunk_len
 
                 # UI: Update line with carriage return
-                print(f"\r       Processing Chunk #{chunk_idx} ({format_bytes(chunk_len)})... ", end="", flush=True)
+                print(
+                    f"\r       Processing Chunk #{chunk_idx} ({format_bytes(chunk_len)})... ",
+                    end="",
+                    flush=True,
+                )
 
                 # 1. CRC Calculation for this chunk
                 chunk_crc = zlib.crc32(chunk_data)
 
                 # 2. Compression
                 compressor = CASTCompressor()
-                res = compressor.compress(chunk_data)
+                # CHANGED: Pass dict_size
+                res = compressor.compress(chunk_data, dict_size=dict_size)
 
                 if isinstance(res, tuple) and len(res) >= 4:
                     c_reg, c_ids, c_vars, id_flag = res[:4]
@@ -120,7 +137,11 @@ def do_compress(input_path, output_path, chunk_size=None, verify=False):
         print(f"\n\n[!] Error during compression: {e}")
         return
 
-    ratio = total_input_processed / total_output_written if total_output_written > 0 else 0.0
+    ratio = (
+        total_input_processed / total_output_written
+        if total_output_written > 0
+        else 0.0
+    )
     elapsed = time.time() - start_total
 
     print(f"\n[+]    Compression completed!")
@@ -175,8 +196,8 @@ def do_decompress(input_path, output_path):
 
                 # Slice buffer
                 c_reg = body_data[0:l_reg]
-                c_ids = body_data[l_reg: l_reg + l_ids]
-                c_vars = body_data[l_reg + l_ids: l_reg + l_ids + l_vars]
+                c_ids = body_data[l_reg : l_reg + l_ids]
+                c_vars = body_data[l_reg + l_ids : l_reg + l_ids + l_vars]
 
                 decompressor = CASTDecompressor()
                 restored = decompressor.decompress(
@@ -234,8 +255,8 @@ def do_verify_standalone(input_path):
                 print(f"\r       Verifying Chunk #{chunk_idx}... ", end="", flush=True)
 
                 c_reg = body_data[0:l_reg]
-                c_ids = body_data[l_reg: l_reg + l_ids]
-                c_vars = body_data[l_reg + l_ids: l_reg + l_ids + l_vars]
+                c_ids = body_data[l_reg : l_reg + l_ids]
+                c_vars = body_data[l_reg + l_ids : l_reg + l_ids + l_vars]
 
                 try:
                     decompressor = CASTDecompressor()
@@ -286,23 +307,41 @@ if __name__ == "__main__":
                 size_str = args[idx + 1]
                 chunk_size_bytes = parse_human_size(size_str)
                 # Remove flag and value from args so they don't interfere later
-                del args[idx:idx + 2]
+                del args[idx : idx + 2]
             else:
                 print("[!] Error: --chunk-size requires a value (e.g. 100MB)")
                 sys.exit(1)
         except ValueError:
             pass
 
-    # 2. Parse Multithread (Still unsupported, but remove to prevent errors if passed)
+    # CHANGED: 2. Parse Dict Size
+    dict_size_bytes = None
+    if "--dict-size" in args:
+        try:
+            idx = args.index("--dict-size")
+            if idx + 1 < len(args):
+                size_str = args[idx + 1]
+                dict_size_bytes = parse_human_size(size_str)
+                # Remove
+                del args[idx : idx + 2]
+            else:
+                print("[!] Error: --dict-size requires a value (e.g. 128MB)")
+                sys.exit(1)
+        except ValueError:
+            pass
+
+    # 3. Parse Multithread (Still unsupported, but remove to prevent errors if passed)
     if "--multithread" in args:
-        print("[*] Note: Multithreading is NOT supported in Python implementation. Running single-threaded.")
+        print(
+            "[*] Note: Multithreading is NOT supported in Python implementation. Running single-threaded."
+        )
         # Only remove if it exists, to avoid errors
         try:
             args.remove("--multithread")
         except ValueError:
             pass
 
-    # 3. Parse Verify Flag
+    # 4. Parse Verify Flag
     verify_flag = "-v" in args or "--verify" in args
     # Remove verify flag from list to identify input/output paths cleanly
     cmd_args = [arg for arg in args if arg not in ["-v", "--verify"]]
@@ -331,7 +370,14 @@ if __name__ == "__main__":
         print(f"      Input:      {input_file}")
         print(f"      Output:     {output_file}")
 
-        do_compress(input_file, output_file, chunk_size=chunk_size_bytes, verify=verify_flag)
+        # CHANGED: Pass dict_size
+        do_compress(
+            input_file,
+            output_file,
+            chunk_size=chunk_size_bytes,
+            dict_size=dict_size_bytes,
+            verify=verify_flag
+        )
 
     elif mode == "-d":
         if len(cmd_args) < 3:
