@@ -68,7 +68,7 @@ The table below compares **CAST (Rust Native)** against state-of-the-art compres
 >
 > *Please refer to the full paper for detailed configuration parameters.*
 
-![Compression Ratio Benchmarks](paper/ratio_benchmarks.PNG)
+![Compression Ratio Benchmarks](paper/rust_native_benchmarks.png)
 
 > *(See `paper/CAST_Paper.pdf` for high-resolution data)*
 
@@ -79,7 +79,7 @@ Here we measure the real-world "Time-to-Compression" trade-off.
 
 **Key Finding:** Contrary to the expectation that pre-processing adds latency, CAST is often **faster** than running standard compression directly on highly structured datasets. The entropy reduction allows the backend encoder to process the stream so efficiently that the **time saved during encoding outweighs the parsing overhead**.
 
-![Rust Performance Benchmarks](paper/rust_7zip_benchmarks.PNG)
+![Rust Performance Benchmarks](paper/rust_7zip_benchmarks.png)
 
 > *(See `paper/CAST_Paper.pdf` for high-resolution data)*
 
