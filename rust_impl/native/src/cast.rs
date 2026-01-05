@@ -9,7 +9,17 @@ use xz2::write::XzEncoder;
 use xz2::stream::{Stream, MtStreamBuilder, Check, LzmaOptions, Filters};
 
 // ============================================================================
-//  STRUCT OTTIMIZZATA (ZERO-ALLOC INITIALIZATION - FIX FREEZE)
+//  CONSTANTS & CONFIG
+// ============================================================================
+
+// Placeholder sicuri (Private Use Area)
+const VAR_PLACEHOLDER: char = '\u{E000}';
+const VAR_PLACEHOLDER_STR: &str = "\u{E000}";
+const VAR_PLACEHOLDER_QUOTE: &str = "\"\u{E000}\"";
+const REG_SEPARATOR: &str = "\u{E001}";
+
+// ============================================================================
+//  STRUCT OTTIMIZZATA
 // ============================================================================
 
 #[derive(Clone)]
@@ -19,7 +29,6 @@ struct ColumnBuffer {
 }
 
 impl ColumnBuffer {
-    // FIX MEMORIA: Inizializza vuoto per evitare esplosione RAM su milioni di template
     fn new() -> Self {
         Self {
             data: Vec::new(),
@@ -37,6 +46,7 @@ impl ColumnBuffer {
     fn get(&self, index: usize) -> &[u8] {
         let start = if index == 0 { 0 } else { self.offsets[index - 1] };
         let end = self.offsets[index];
+        if start > end { return &[]; }
         &self.data[start..end]
     }
 
@@ -47,7 +57,7 @@ impl ColumnBuffer {
 }
 
 // ============================================================================
-//  PARSER MANUALE (REPLICA REGEX + IPER-OTTIMIZZATO)
+//  PARSER MANUALE (SAFE)
 // ============================================================================
 
 #[derive(Clone, Copy, PartialEq)]
@@ -64,23 +74,16 @@ fn is_hex_digit(b: u8) -> bool {
 #[inline(always)]
 fn is_aggr_char(b: u8) -> bool {
     (b >= b'a' && b <= b'z') || (b >= b'A' && b <= b'Z') ||
-    (b >= b'0' && b <= b'9') || b == b'_' || b == b'.' || b == b'-'
+    (b >= b'0' && b <= b'9') || b == b'_' || b == b'.' || b == b'-' || b == b':'
 }
 
-// Replica regex: \-?\d+(?:\.\d+)?
 #[inline(always)]
 fn match_strict_number(bytes: &[u8]) -> usize {
     let len = bytes.len();
     let mut i = 0;
-
-    // Optional '-'
     if i < len && bytes[i] == b'-' { i += 1; }
-
-    // Must have at least one digit
     if i >= len || !is_digit(bytes[i]) { return 0; }
     while i < len && is_digit(bytes[i]) { i += 1; }
-
-    // Optional group: (?:\.\d+)?
     if i + 1 < len && bytes[i] == b'.' {
         if is_digit(bytes[i+1]) {
             i += 2;
@@ -90,7 +93,6 @@ fn match_strict_number(bytes: &[u8]) -> usize {
     i
 }
 
-// Replica regex: 0x[0-9a-fA-F]+
 #[inline(always)]
 fn match_strict_hex(bytes: &[u8]) -> usize {
     if bytes.len() < 3 { return 0; }
@@ -102,9 +104,13 @@ fn match_strict_hex(bytes: &[u8]) -> usize {
     0
 }
 
-/// Parsa la riga cercando token. Replica `findall` delle regex.
 #[inline(never)]
-fn parse_line_manual<'a>(line: &'a str, mode: ParsingMode, buffer_vars: &mut Vec<&'a str>, buffer_skel: &mut String) {
+fn parse_line_manual<'a>(line: &'a str, mode: ParsingMode, buffer_vars: &mut Vec<&'a str>, buffer_skel: &mut String) -> bool {
+    // FAIL-SAFE: Collision detection
+    if line.contains(VAR_PLACEHOLDER) || line.contains(REG_SEPARATOR) {
+        return false;
+    }
+
     let bytes = line.as_bytes();
     let len = bytes.len();
     let mut i = 0;
@@ -113,9 +119,9 @@ fn parse_line_manual<'a>(line: &'a str, mode: ParsingMode, buffer_vars: &mut Vec
     while i < len {
         let b = bytes[i];
 
-        // 1. QUOTED STRING: "(?:[^"\\]|\\.|"")*"
+        // 1. QUOTED STRING
         if b == b'"' {
-            let mut k = 1; // Skip opening quote
+            let mut k = 1;
             let mut closed = false;
             let remaining = &bytes[i..];
 
@@ -138,11 +144,12 @@ fn parse_line_manual<'a>(line: &'a str, mode: ParsingMode, buffer_vars: &mut Vec
 
             if closed {
                 let matched_len = k;
-                let content = &line[i+1 .. i+matched_len-1]; // Strip quotes
+                let end_content = if matched_len > 1 { matched_len - 1 } else { 1 };
+                let content = &line[i+1 .. i+end_content];
 
                 if i > last_struct_start { buffer_skel.push_str(&line[last_struct_start..i]); }
                 buffer_vars.push(content);
-                buffer_skel.push_str("\"\x00\"");
+                buffer_skel.push_str(VAR_PLACEHOLDER_QUOTE);
 
                 i += matched_len;
                 last_struct_start = i;
@@ -172,7 +179,7 @@ fn parse_line_manual<'a>(line: &'a str, mode: ParsingMode, buffer_vars: &mut Vec
 
             let token = &line[i .. i+matched_len];
             buffer_vars.push(token);
-            buffer_skel.push('\x00');
+            buffer_skel.push(VAR_PLACEHOLDER);
 
             i += matched_len;
             last_struct_start = i;
@@ -184,6 +191,8 @@ fn parse_line_manual<'a>(line: &'a str, mode: ParsingMode, buffer_vars: &mut Vec
     if last_struct_start < len {
         buffer_skel.push_str(&line[last_struct_start..]);
     }
+
+    true
 }
 
 // ============================================================================
@@ -254,7 +263,7 @@ pub fn decompress_buffer_native(data: &[u8]) -> Vec<u8> {
 }
 
 // ============================================================================
-//  CAST COMPRESSOR (OPTIMIZED)
+//  CAST COMPRESSOR (OPTIMIZED & SAFE)
 // ============================================================================
 
 pub struct CASTCompressor {
@@ -284,7 +293,6 @@ impl CASTCompressor {
         let sample_limit = 1000;
         let mut strict_templates = HashSet::new();
         let mut line_count = 0;
-
         let mut temp_vars = Vec::with_capacity(16);
         let mut temp_skel = String::with_capacity(256);
 
@@ -292,32 +300,18 @@ impl CASTCompressor {
             line_count += 1;
             temp_vars.clear();
             temp_skel.clear();
-
-            // FIX FREEZE 1: Tronca linee giganti per analisi
             let line_sample = if line.len() > 16384 { &line[..16384] } else { line };
-
+            // Analysis ignores collisions
             parse_line_manual(line_sample, ParsingMode::Strict, &mut temp_vars, &mut temp_skel);
             strict_templates.insert(temp_skel.clone());
         }
 
         if line_count == 0 { return; }
         let ratio = strict_templates.len() as f64 / line_count as f64;
-
-        if ratio > 0.10 {
-            self.mode = ParsingMode::Aggressive;
-        } else {
-            self.mode = ParsingMode::Strict;
-        }
+        self.mode = if ratio > 0.10 { ParsingMode::Aggressive } else { ParsingMode::Strict };
     }
 
     pub fn compress(&mut self, input_data: &[u8]) -> (Vec<u8>, Vec<u8>, Vec<u8>, u8, String) {
-        let sample_len = std::cmp::min(input_data.len(), 4096);
-        let bad_chars = input_data[..sample_len].iter()
-            .filter(|&&b| b < 32 && b != 9 && b != 10 && b != 13).count();
-        if sample_len > 0 && (bad_chars as f64 / sample_len as f64) > 0.01 {
-             return self.create_passthrough(input_data, "Passthrough [Binary]");
-        }
-
         let (text_cow, is_latin1) = match std::str::from_utf8(input_data) {
             Ok(s) => (Cow::Borrowed(s), false),
             Err(_) => {
@@ -327,27 +321,25 @@ impl CASTCompressor {
         };
 
         let text_slice = text_cow.as_ref();
-
-        // 1. Analyze Strategy
         self.analyze_strategy(text_slice);
 
-        // FIX FREEZE 2: Conteggio REALE righe
-        let line_count_real = text_slice.as_bytes().iter().filter(|&&b| b == b'\n').count() + 1;
-        let unique_limit = (line_count_real as f64 * if self.mode == ParsingMode::Aggressive { 0.40 } else { 0.25 }) as u32;
-
         let lines = text_slice.split_inclusive('\n');
-
         let mut vars_cache: Vec<&str> = Vec::with_capacity(32);
         let mut skel_cache = String::with_capacity(512);
 
-        // 3. Main Loop
+        let line_count_real = text_slice.as_bytes().iter().filter(|&&b| b == b'\n').count() + 1;
+        let unique_limit = (line_count_real as f64 * if self.mode == ParsingMode::Aggressive { 0.40 } else { 0.25 }) as u32;
+
         for line in lines {
             if line.is_empty() { continue; }
 
             vars_cache.clear();
             skel_cache.clear();
 
-            parse_line_manual(line, self.mode, &mut vars_cache, &mut skel_cache);
+            // Safe parsing
+            if !parse_line_manual(line, self.mode, &mut vars_cache, &mut skel_cache) {
+                 return self.create_passthrough(input_data, "Collision Protected");
+            }
 
             let t_id;
             if let Some(&id) = self.template_map.get(&skel_cache) {
@@ -366,11 +358,8 @@ impl CASTCompressor {
             self.stream_template_ids.push(t_id);
             let cols = self.columns_storage.get_mut(&t_id).unwrap();
 
-            // Lazy creation: FIX MEMORIA
             if cols.is_empty() {
-                for _ in 0..vars_cache.len() {
-                    cols.push(ColumnBuffer::new());
-                }
+                for _ in 0..vars_cache.len() { cols.push(ColumnBuffer::new()); }
             }
 
             let limit = std::cmp::min(vars_cache.len(), cols.len());
@@ -379,7 +368,7 @@ impl CASTCompressor {
             }
         }
 
-        // 4. Heuristic (Fast Xz level 1)
+        // 4. Heuristic
         let num_templates = self.skeletons_list.len();
         let mut decision_mode = "UNIFIED";
 
@@ -394,12 +383,12 @@ impl CASTCompressor {
                             sample_buffer.extend_from_slice(col.get(k));
                             collected += 1;
                         }
-                        if collected > 2000 { break; }
                     }
                 }
                 if collected > 2000 { break; }
             }
             if !sample_buffer.is_empty() {
+                // Heuristic compression
                 let mut e = XzEncoder::new(Vec::new(), 1);
                 e.write_all(&sample_buffer).unwrap();
                 let c_sample = e.finish().unwrap();
@@ -423,9 +412,9 @@ impl CASTCompressor {
                 let count_b = counts.get(b).unwrap();
                 if count_a != count_b { count_b.cmp(count_a) }
                 else {
-                    let idx_a = first_appearance.get(a).unwrap();
-                    let idx_b = first_appearance.get(b).unwrap();
-                    idx_a.cmp(idx_b)
+                     let idx_a = first_appearance.get(a).unwrap();
+                     let idx_b = first_appearance.get(b).unwrap();
+                     idx_a.cmp(idx_b)
                 }
             });
             let mut remap = HashMap::new();
@@ -446,8 +435,7 @@ impl CASTCompressor {
         }
 
         // 6. Serialization
-        let reg_sep = "\x1E";
-        let raw_registry = self.skeletons_list.join(reg_sep).into_bytes();
+        let raw_registry = self.skeletons_list.join(REG_SEPARATOR).into_bytes();
         let mut raw_ids = Vec::new();
         let mut id_mode_flag;
 
@@ -465,9 +453,9 @@ impl CASTCompressor {
 
         if is_latin1 { id_mode_flag |= 0x80; }
 
+        // ALWAYS ESCAPED MODE
         let row_sep = b"\x00";
-        let col_sep_split = b"\xFF\xFF";
-        let col_sep_unified = b"\x02";
+        let col_sep = b"\x02";
         let esc_char = b"\x01";
 
         let esc_seq_esc = b"\x01\x01";
@@ -475,26 +463,20 @@ impl CASTCompressor {
         let esc_seq_col = b"\x01\x03";
 
         let mut vars_buffer = Vec::with_capacity(input_data.len());
-        let is_unified = decision_mode == "UNIFIED";
-        let col_sep = if is_unified { col_sep_unified.as_slice() } else { col_sep_split.as_slice() };
 
         for t_id in 0..self.skeletons_list.len() {
             if let Some(cols) = self.columns_storage.get(&(t_id as u32)) {
                 for col_buf in cols {
                     for idx in 0..col_buf.len() {
                         if idx > 0 { vars_buffer.extend_from_slice(row_sep); }
-
                         let v_bytes = col_buf.get(idx);
 
-                        if is_unified {
-                            for &b in v_bytes {
-                                if b == esc_char[0] { vars_buffer.extend_from_slice(esc_seq_esc); }
-                                else if b == row_sep[0] { vars_buffer.extend_from_slice(esc_seq_sep); }
-                                else if b == col_sep_unified[0] { vars_buffer.extend_from_slice(esc_seq_col); }
-                                else { vars_buffer.push(b); }
-                            }
-                        } else {
-                            vars_buffer.extend_from_slice(v_bytes);
+                        // Byte Stuffing (Always)
+                        for &b in v_bytes {
+                            if b == esc_char[0] { vars_buffer.extend_from_slice(esc_seq_esc); }
+                            else if b == row_sep[0] { vars_buffer.extend_from_slice(esc_seq_sep); }
+                            else if b == col_sep[0] { vars_buffer.extend_from_slice(esc_seq_col); }
+                            else { vars_buffer.push(b); }
                         }
                     }
                     vars_buffer.extend_from_slice(col_sep);
@@ -507,7 +489,7 @@ impl CASTCompressor {
             ParsingMode::Aggressive => "Aggressive"
         };
 
-        // 7. Compressione Finale
+        // 7. Compressione Finale (Native)
         if decision_mode == "SPLIT" {
             let c_reg = compress_buffer_native(&raw_registry, self.multithread);
             let c_ids = compress_buffer_native(&raw_ids, self.multithread);
@@ -528,13 +510,14 @@ impl CASTCompressor {
     }
 
     fn create_passthrough(&self, data: &[u8], reason: &str) -> (Vec<u8>, Vec<u8>, Vec<u8>, u8, String) {
+        println!("[!] Switching to Passthrough ({})", reason);
         let c_vars = compress_buffer_native(data, self.multithread);
         (Vec::new(), Vec::new(), c_vars, 255, reason.to_string())
     }
 }
 
 // ============================================================================
-//  CAST DECOMPRESSOR (UNCHANGED LOGIC)
+//  CAST DECOMPRESSOR (OPTIMIZED)
 // ============================================================================
 
 pub struct CASTDecompressor;
@@ -570,7 +553,8 @@ impl CASTDecompressor {
         }
 
         let reg_str = String::from_utf8(reg_data_bytes).expect("Registry corrupted (not UTF-8)");
-        let skeletons: Vec<&str> = reg_str.split("\x1E").collect();
+        // Split sicuro
+        let skeletons: Vec<&str> = reg_str.split(REG_SEPARATOR).collect();
 
         let mut template_ids = Vec::new();
         if id_flag == 2 {
@@ -581,116 +565,100 @@ impl CASTDecompressor {
             for ch in ids_data_bytes.chunks_exact(2) { template_ids.push(u16::from_le_bytes(ch.try_into().unwrap()) as usize); }
         }
 
-        let col_sep_unified = b"\x02";
-        let col_sep_split = b"\xFF\xFF";
-        let sep = if is_unified { col_sep_unified.as_slice() } else { col_sep_split.as_slice() };
+        // DE-SERIALIZATION (ALWAYS ESCAPED)
+        let col_sep = b"\x02";
+        let row_sep = b"\x00";
 
         let mut raw_columns_offsets = Vec::new();
         let mut start = 0;
         let mut i = 0;
         let max_len = vars_data_bytes.len();
 
-        while i <= max_len.saturating_sub(sep.len()) {
-            if &vars_data_bytes[i..i+sep.len()] == sep {
+        // 1. Scan Column Boundaries
+        while i < max_len {
+            if vars_data_bytes[i] == 0x01 {
+                i += 2;
+            } else if vars_data_bytes[i] == col_sep[0] {
                 raw_columns_offsets.push((start, i));
-                i += sep.len();
+                i += 1;
                 start = i;
-            } else { i += 1; }
+            } else {
+                i += 1;
+            }
         }
         if start < max_len { raw_columns_offsets.push((start, max_len)); }
-        if let Some((s, e)) = raw_columns_offsets.last() { if s == e { raw_columns_offsets.pop(); } }
 
         let mut columns_storage: Vec<Vec<VecDeque<(usize, usize)>>> = vec![Vec::new(); skeletons.len()];
         let mut col_iter = raw_columns_offsets.into_iter();
-        let row_sep_byte = b"\x00"[0];
 
         for (t_idx, skel) in skeletons.iter().enumerate() {
-            let num_vars = skel.matches('\x00').count();
+            let num_vars = skel.matches(VAR_PLACEHOLDER).count();
             for _ in 0..num_vars {
                 if let Some((col_start, col_end)) = col_iter.next() {
                     let mut deque = VecDeque::new();
-
-                    if !is_unified {
-                        let mut curr = col_start;
-                        while curr < col_end {
-                            let mut next_sep = curr;
-                            while next_sep < col_end && vars_data_bytes[next_sep] != row_sep_byte {
-                                next_sep += 1;
-                            }
-                            deque.push_back((curr, next_sep));
-                            curr = next_sep + 1;
+                    // 2. Scan Rows
+                    let mut curr = col_start;
+                    let mut cell_start = curr;
+                    while curr < col_end {
+                        if vars_data_bytes[curr] == 0x01 {
+                            curr += 2;
+                        } else if vars_data_bytes[curr] == row_sep[0] {
+                            deque.push_back((cell_start, curr));
+                            curr += 1;
+                            cell_start = curr;
+                        } else {
+                            curr += 1;
                         }
-                    } else {
-                        let mut curr = col_start;
-                        let mut cell_start = curr;
-                        while curr < col_end {
-                             if vars_data_bytes[curr] == 0x01 {
-                                 curr += 2;
-                             } else if vars_data_bytes[curr] == row_sep_byte {
-                                 deque.push_back((cell_start, curr));
-                                 curr += 1;
-                                 cell_start = curr;
-                             } else {
-                                 curr += 1;
-                             }
-                        }
-                        deque.push_back((cell_start, curr));
                     }
+                    deque.push_back((cell_start, curr));
                     columns_storage[t_idx].push(deque);
                 }
             }
         }
 
-        let skel_parts_cache: Vec<Vec<&str>> = skeletons.iter().map(|s| s.split("\x00").collect()).collect();
+        let skel_parts_cache: Vec<Vec<&str>> = skeletons.iter().map(|s| s.split(VAR_PLACEHOLDER_STR).collect()).collect();
         let mut final_blob = Vec::with_capacity(vars_data_bytes.len() + reg_str.len());
 
         let append_unescaped = |blob: &mut Vec<u8>, slice: &[u8]| {
-            if is_unified {
-                let mut k = 0;
-                while k < slice.len() {
-                    if slice[k] == 0x01 && k+1 < slice.len() {
-                        let nb = slice[k+1];
-                        if nb == 0x01 { blob.push(0x01); }
-                        else if nb == 0x00 { blob.push(0x00); }
-                        else if nb == 0x03 { blob.push(0x02); }
-                        k += 2;
-                    } else {
-                        blob.push(slice[k]);
-                        k += 1;
-                    }
+            let mut k = 0;
+            while k < slice.len() {
+                if slice[k] == 0x01 && k+1 < slice.len() {
+                    let nb = slice[k+1];
+                    if nb == 0x01 { blob.push(0x01); }
+                    else if nb == 0x00 { blob.push(0x00); }
+                    else if nb == 0x03 { blob.push(0x02); }
+                    k += 2;
+                } else {
+                    blob.push(slice[k]);
+                    k += 1;
                 }
-            } else {
-                blob.extend_from_slice(slice);
             }
         };
 
+        // Borrow check fix logic
+        let num_rows_single_template = if id_flag == 3 {
+             if !columns_storage.is_empty() && !columns_storage[0].is_empty() {
+                 columns_storage[0][0].len()
+             } else { 0 }
+        } else { 0 };
+
+        let mut reconstruct = |t_id: usize| {
+             let parts = &skel_parts_cache[t_id];
+             let queues = &mut columns_storage[t_id];
+             for (idx, part) in parts.iter().enumerate() {
+                 final_blob.extend_from_slice(part.as_bytes());
+                 if idx < queues.len() {
+                     if let Some((s, e)) = queues[idx].pop_front() {
+                         append_unescaped(&mut final_blob, &vars_data_bytes[s..e]);
+                     }
+                 }
+             }
+        };
+
         if id_flag == 3 {
-            let parts = &skel_parts_cache[0];
-            let queues = &mut columns_storage[0];
-            let num_rows = if !queues.is_empty() { queues[0].len() } else { 0 };
-            for _ in 0..num_rows {
-                for (idx, part) in parts.iter().enumerate() {
-                    final_blob.extend_from_slice(part.as_bytes());
-                    if idx < queues.len() {
-                        if let Some((s, e)) = queues[idx].pop_front() {
-                            append_unescaped(&mut final_blob, &vars_data_bytes[s..e]);
-                        }
-                    }
-                }
-            }
+            for _ in 0..num_rows_single_template { reconstruct(0); }
         } else {
-            for &t_id in &template_ids {
-                let parts = &skel_parts_cache[t_id];
-                let queues = &mut columns_storage[t_id];
-                for (idx, part) in parts.iter().enumerate() {
-                    final_blob.extend_from_slice(part.as_bytes());
-                    if idx < queues.len() {
-                        if let Some((s, e)) = queues[idx].pop_front() {
-                             append_unescaped(&mut final_blob, &vars_data_bytes[s..e]);
-                        }
-                    }
-                }
-            }
+            for &t_id in &template_ids { reconstruct(t_id); }
         }
 
         let final_data = if is_latin1 { encode_back_to_latin1(final_blob) } else { final_blob };
