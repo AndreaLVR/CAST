@@ -9,7 +9,7 @@ use crc32fast::Hasher;
 use cast::cast::{
     CASTCompressor,
     CASTDecompressor,
-    compress_with_7z // Make sure "pub fn compress_with_7z" is in cast.rs
+    compress_with_7z
 };
 
 // Struct to store results for final ranking
@@ -35,7 +35,21 @@ fn main() {
         }
     }
 
-    // 2. Parsing --list
+    // 2. Parsing --dict-size <SIZE> (NEW)
+    let mut dict_size_bytes: u32 = 128 * 1024 * 1024; // Default 128 MB
+    if let Some(pos) = args.iter().position(|arg| arg == "--dict-size") {
+        if pos + 1 < args.len() {
+            let val = &args[pos+1];
+            if let Some(s) = parse_size(val) {
+                dict_size_bytes = s as u32;
+            } else {
+                eprintln!("[!]  Error: Invalid dict size format: '{}'.", val);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // 3. Parsing --list
     let list_path_opt = args.windows(2)
         .find(|w| w[0] == "--list")
         .map(|w| w[1].clone());
@@ -46,7 +60,7 @@ fn main() {
     }
     let list_path = list_path_opt.unwrap();
 
-    // 3. Parsing --compare-with
+    // 4. Parsing --compare-with
     let competitors_opt = args.windows(2)
         .find(|w| w[0] == "--compare-with")
         .map(|w| w[1].clone());
@@ -99,6 +113,7 @@ fn main() {
     } else {
         println!("CAST Chunking:      DISABLED (Global Optimization)");
     }
+    println!("LZMA Dict Size:     {}", format_bytes(dict_size_bytes as usize));
     println!("Competitors:        {:?} (Always Solid/Global)", competitors);
     println!("Files to test:      {}", files_to_test.len());
     println!("--------------------------------------------------\n");
@@ -144,28 +159,23 @@ fn main() {
         // 1. CAST EXECUTION (Chunked or Solid)
         // =========================================================
         if let Some(chunk_size) = chunk_size_bytes {
-            // CAST Chunked
-            run_cast_chunked(&file_path, chunk_size, file_len, &mut results);
+            // CAST Chunked (Pass dict_size)
+            run_cast_chunked(&file_path, chunk_size, file_len, dict_size_bytes, &mut results);
         } else {
-            // CAST Solid
+            // CAST Solid (Pass dict_size)
             let data = match std::fs::read(&file_path) {
                 Ok(d) => d,
                 Err(e) => { eprintln!("[!]  Read Error (CAST): {}", e); Vec::new() }
             };
             if !data.is_empty() {
-                run_cast_solid(&data, &mut results);
+                run_cast_solid(&data, dict_size_bytes, &mut results);
             }
         }
 
         // =========================================================
         // 2. COMPETITORS EXECUTION (Always Solid)
         // =========================================================
-        // Dobbiamo caricare il file intero in RAM per i competitor se non lo abbiamo già fatto.
-        // Nota: Questo è pesante per la RAM, ma necessario per un confronto "Global".
-
         if !competitors.is_empty() {
-             // Rileggiamo il file per sicurezza (per evitare complessità di ownership con il blocco sopra)
-             // Il sistema operativo userà la cache del disco, quindi sarà veloce.
              let full_data = match std::fs::read(&file_path) {
                 Ok(d) => d,
                 Err(e) => { eprintln!("[!]  Read Error (Competitors): {}", e); Vec::new() }
@@ -173,7 +183,8 @@ fn main() {
 
             if !full_data.is_empty() {
                 for algo in &competitors {
-                    run_competitor_solid(algo, &full_data, &mut results);
+                    // Pass dict_size to maintain parity with LZMA
+                    run_competitor_solid(algo, &full_data, dict_size_bytes, &mut results);
                 }
             }
         }
@@ -184,7 +195,6 @@ fn main() {
             continue;
         }
 
-        // Sort by size (ascending) -> smallest wins
         results.sort_by_key(|r| r.size);
 
         let winner = &results[0];
@@ -238,13 +248,14 @@ fn main() {
 
 // --- CAST LOGIC ---
 
-fn run_cast_solid(data: &[u8], results: &mut Vec<BenchmarkResult>) {
+fn run_cast_solid(data: &[u8], dict_size: u32, results: &mut Vec<BenchmarkResult>) {
     let orig_len = data.len();
     print!("\n[*] Running CAST (Global)...");
     io::stdout().flush().unwrap();
 
     let start = Instant::now();
-    let mut compressor = CASTCompressor::new(true);
+    // CHANGED: Pass dict_size
+    let mut compressor = CASTCompressor::new(true, dict_size);
     let (r, i, v, flag, _) = compressor.compress(data);
     let duration = start.elapsed().as_secs_f64();
     let size = 17 + r.len() + i.len() + v.len();
@@ -268,7 +279,7 @@ fn run_cast_solid(data: &[u8], results: &mut Vec<BenchmarkResult>) {
     }
 }
 
-fn run_cast_chunked(file_path: &str, chunk_size: usize, file_len: usize, results: &mut Vec<BenchmarkResult>) {
+fn run_cast_chunked(file_path: &str, chunk_size: usize, file_len: usize, dict_size: u32, results: &mut Vec<BenchmarkResult>) {
     print!("\n[*] Running CAST (Chunked)...");
     io::stdout().flush().unwrap();
 
@@ -295,7 +306,8 @@ fn run_cast_chunked(file_path: &str, chunk_size: usize, file_len: usize, results
 
         // Compress
         let start = Instant::now();
-        let mut compressor = CASTCompressor::new(true);
+        // CHANGED: Pass dict_size
+        let mut compressor = CASTCompressor::new(true, dict_size);
         let (r, i, v, flag, _) = compressor.compress(chunk_data);
         total_time += start.elapsed().as_secs_f64();
 
@@ -326,7 +338,7 @@ fn run_cast_chunked(file_path: &str, chunk_size: usize, file_len: usize, results
 
 // --- COMPETITORS LOGIC (ALWAYS SOLID) ---
 
-fn run_competitor_solid(algo: &str, data: &[u8], results: &mut Vec<BenchmarkResult>) {
+fn run_competitor_solid(algo: &str, data: &[u8], dict_size: u32, results: &mut Vec<BenchmarkResult>) {
     let orig_len = data.len();
     match algo {
         "lzma2" => {
@@ -334,7 +346,8 @@ fn run_competitor_solid(algo: &str, data: &[u8], results: &mut Vec<BenchmarkResu
             print!("\n[*]  Running {} (Global/Solid)...", name);
             io::stdout().flush().unwrap();
             let start = Instant::now();
-            let c = compress_with_7z(data); // Usa la tua funzione helper che chiama 7z
+            // CHANGED: Pass dict_size to your 7z helper
+            let c = compress_with_7z(data, dict_size);
             let duration = start.elapsed().as_secs_f64();
             let size = c.len();
             print_result(duration, size, orig_len);
