@@ -29,7 +29,7 @@ To build this project, you only need a standard Rust environment.
     * **macOS:** Requires Xcode Command Line Tools (and optionally `xz` for system linking):
       ```bash
       xcode-select --install
-      # Optional (via Homebrew): brew install xz pkg-config
+      brew install xz pkg-config
       ```
 
 ---
@@ -167,6 +167,7 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd,brotli
 ```
+
 
 
 
