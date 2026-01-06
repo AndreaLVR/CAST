@@ -32,8 +32,6 @@ To build this project, you only need a standard Rust environment.
       # Optional (via Homebrew): brew install xz pkg-config
       ```
 
-*Note: The project automatically compiles and statically links the necessary LZMA libraries. No manual installation of `vcpkg` or external DLLs is required.*
-
 ---
 
 ## ⚙️ Configuration
@@ -169,6 +167,7 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd,brotli
 ```
+
 
 
 
