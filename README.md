@@ -136,7 +136,7 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
     * **Native Mode:** Pure Python, single-threaded (bound by GIL).
     * **System Mode:** Multi-threaded via 7-Zip backend.
 * **Method:** A high-level implementation relying on **Standard Regex** for pattern detection, chosen for code clarity over the zero-copy byte parsing used in Rust.
-* **Role:** Designed as a readable reference for researchers to understand the core decomposition logic. It fully supports **Chunking** for large file processing via CLI.
+* **Role:** Designed as a readable reference for researchers to understand the core decomposition logic. It fully supports **Chunking** and **Dictionary Size configuration** via CLI, ensuring algorithmic parity with the Rust version.
 * **⚠️ Limitation:** Due to the overhead of the regex engine and the interpreter, this version is **not** intended for performance profiling and was **not** used for the official benchmarks presented in the paper.
 
 ---
