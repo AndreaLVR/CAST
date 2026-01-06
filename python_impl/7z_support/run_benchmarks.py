@@ -66,16 +66,30 @@ def load_file_list(list_path: str) -> List[str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="CAST Compression Benchmark Tool (Reference)")
+    parser = argparse.ArgumentParser(
+        description="CAST Compression Benchmark Tool (Reference)"
+    )
 
     # Input: List or Single file
     input_group = parser.add_mutually_exclusive_group(required=True)
-    input_group.add_argument("--list", type=str, help="Path to text file containing list of files.")
+    input_group.add_argument(
+        "--list", type=str, help="Path to text file containing list of files."
+    )
     input_group.add_argument("--file", type=str, help="Path to a single file to test.")
 
     # CAST Settings
-    parser.add_argument("--chunk-size", type=str,
-                        help="Apply chunking ONLY to CAST (e.g. '100MB'). Competitors remain solid.")
+    parser.add_argument(
+        "--chunk-size",
+        type=str,
+        help="Apply chunking ONLY to CAST (e.g. '100MB'). Competitors remain solid.",
+    )
+
+    # CHANGED: Added dict-size argument
+    parser.add_argument(
+        "--dict-size",
+        type=str,
+        help="Set LZMA Dictionary Size (e.g. '128MB', '256MB'). Default: 128MB.",
+    )
 
     # Competitors
     parser.add_argument("--lzma", action="store_true", help="Enable LZMA2 (XZ).")
@@ -89,8 +103,9 @@ def main() -> None:
     RUN_BROTLI = args.all or args.brotli
     RUN_ZSTD = args.all or args.zstd
 
-    # Parse chunk size
+    # Parse settings
     CHUNK_SIZE = parse_human_size(args.chunk_size)
+    DICT_SIZE = parse_human_size(args.dict_size)  # Can be None
 
     # Checks
     if RUN_BROTLI and not brotli:
@@ -112,11 +127,17 @@ def main() -> None:
 
     print(f"\nSTARTING CAST REFERENCE BENCHMARK SUITE")
     print(
-        f"Competitors: LZMA={'ON' if RUN_LZMA else 'OFF'}, BROTLI={'ON' if RUN_BROTLI else 'OFF'}, ZSTD={'ON' if RUN_ZSTD else 'OFF'}")
+        f"Competitors: LZMA={'ON' if RUN_LZMA else 'OFF'}, BROTLI={'ON' if RUN_BROTLI else 'OFF'}, ZSTD={'ON' if RUN_ZSTD else 'OFF'}"
+    )
+
+    # Config Info
+    dict_info = format_bytes(DICT_SIZE) if DICT_SIZE else "Default (128MB)"
     if CHUNK_SIZE:
-        print(f"CAST Configuration: CHUNKED ({format_bytes(CHUNK_SIZE)} bytes) vs Competitors (SOLID)")
+        print(
+            f"CAST Config: CHUNKED ({format_bytes(CHUNK_SIZE)}) | Dict: {dict_info}"
+        )
     else:
-        print(f"CAST Configuration: SOLID (Single Block)")
+        print(f"CAST Config: SOLID (Single Block) | Dict: {dict_info}")
     print("=" * 75)
 
     for file_path in files_to_test:
@@ -139,7 +160,8 @@ def main() -> None:
             continue
 
         orig_len = len(original_data)
-        if orig_len == 0: continue
+        if orig_len == 0:
+            continue
 
         original_crc = zlib.crc32(original_data)
         print(f"Original: {format_bytes(orig_len)} bytes | CRC32: {original_crc:08X}")
@@ -155,8 +177,26 @@ def main() -> None:
             print("[1] LZMA (Extreme)... ", end="", flush=True)
             start = time.time()
             try:
-                # Preset 9 | Extreme matches the Rust benchmark settings
-                c_data = lzma.compress(original_data, format=lzma.FORMAT_XZ, preset=9 | lzma.PRESET_EXTREME)
+                # CHANGED: Apply dict_size parity to competitor!
+                if DICT_SIZE is not None:
+                    # We must use filters to enforce dict_size
+                    lzma_filters = [{
+                        "id": lzma.FILTER_LZMA2,
+                        "preset": 9 | lzma.PRESET_EXTREME,
+                        "dict_size": DICT_SIZE
+                    }]
+                    c_data = lzma.compress(
+                        original_data,
+                        format=lzma.FORMAT_XZ,
+                        check=lzma.CHECK_CRC32,
+                        filters=lzma_filters
+                    )
+                else:
+                    # Legacy/Default behavior
+                    c_data = lzma.compress(
+                        original_data, format=lzma.FORMAT_XZ, preset=9 | lzma.PRESET_EXTREME
+                    )
+
                 times["LZMA"] = time.time() - start
                 results["LZMA"] = len(c_data)
                 print(f"Done ({times['LZMA']:.2f}s)")
@@ -183,7 +223,9 @@ def main() -> None:
             print("[3] Brotli (Q 11)...    ", end="", flush=True)
             start = time.time()
             try:
-                c_data = brotli.compress(original_data, mode=brotli.MODE_GENERIC, quality=11)
+                c_data = brotli.compress(
+                    original_data, mode=brotli.MODE_GENERIC, quality=11
+                )
                 times["Brotli"] = time.time() - start
                 results["Brotli"] = len(c_data)
                 print(f"Done ({times['Brotli']:.2f}s)")
@@ -198,6 +240,9 @@ def main() -> None:
         try:
             full_blob = bytearray()
 
+            # Set effective dict size for calls (Default 128MB if None)
+            call_dict_size = DICT_SIZE if DICT_SIZE else 128 * 1024 * 1024
+
             if CHUNK_SIZE:
                 # CHUNKED PROCESSING
                 offset = 0
@@ -207,7 +252,9 @@ def main() -> None:
 
                     chunk_crc = zlib.crc32(chunk)
                     compressor = CASTCompressor()
-                    res = compressor.compress(chunk)
+
+                    # CHANGED: Pass dict_size
+                    res = compressor.compress(chunk, dict_size=call_dict_size)
 
                     # Handle 5-element return tuple
                     if isinstance(res, tuple):
@@ -221,7 +268,14 @@ def main() -> None:
                     else:
                         raise ValueError("Invalid output type")
 
-                    header = struct.pack("<IIIIB", chunk_crc, len(c_reg), len(c_ids), len(c_vars), id_flag)
+                    header = struct.pack(
+                        "<IIIIB",
+                        chunk_crc,
+                        len(c_reg),
+                        len(c_ids),
+                        len(c_vars),
+                        id_flag,
+                    )
                     full_blob.extend(header)
                     full_blob.extend(c_reg)
                     full_blob.extend(c_ids)
@@ -231,7 +285,8 @@ def main() -> None:
             else:
                 # SOLID PROCESSING
                 compressor = CASTCompressor()
-                res = compressor.compress(original_data)
+                # CHANGED: Pass dict_size
+                res = compressor.compress(original_data, dict_size=call_dict_size)
 
                 if isinstance(res, tuple):
                     if len(res) >= 5:
@@ -244,7 +299,9 @@ def main() -> None:
                 else:
                     raise ValueError("Invalid output type")
 
-                header = struct.pack("<IIIIB", original_crc, len(c_reg), len(c_ids), len(c_vars), id_flag)
+                header = struct.pack(
+                    "<IIIIB", original_crc, len(c_reg), len(c_ids), len(c_vars), id_flag
+                )
                 full_blob.extend(header)
                 full_blob.extend(c_reg)
                 full_blob.extend(c_ids)
@@ -276,7 +333,9 @@ def main() -> None:
         sorted_res = sorted(valid.items(), key=lambda x: x[1])
         winner_name, winner_size = sorted_res[0]
 
-        print(f"{'RANK':<4} {'ALGORITHM':<8} {'SIZE':>14} {'RATIO':>10} {'TIME':>10} {'NOTES'}")
+        print(
+            f"{'RANK':<4} {'ALGORITHM':<8} {'SIZE':>14} {'RATIO':>10} {'TIME':>10} {'NOTES'}"
+        )
 
         for i, (name, size) in enumerate(sorted_res, 1):
             t = times.get(name, 0)
@@ -292,7 +351,9 @@ def main() -> None:
                 diff = size - winner_size
                 note = f"+{format_bytes(diff)} B"
 
-            print(f"{i:<4} {name:<8} {size_str:>23} {ratio:>9.2f}x {time_str:>19} {note}")
+            print(
+                f"{i:<4} {name:<8} {size_str:>23} {ratio:>9.2f}x {time_str:>19} {note}"
+            )
 
         # --- CAST VERIFICATION ---
         if "CAST" in results:
@@ -307,7 +368,8 @@ def main() -> None:
                     chunk_idx = 0
                     while True:
                         head = f_in.read(17)
-                        if not head: break
+                        if not head:
+                            break
                         if len(head) < 17:
                             verified_ok = False
                             break
@@ -323,14 +385,16 @@ def main() -> None:
                         dec = CASTDecompressor()
                         restored = dec.decompress(
                             body[:lr],
-                            body[lr:lr + li],
+                            body[lr: lr + li],
                             body[lr + li:],
                             expected_crc=crc,
-                            id_mode_flag=flg
+                            id_mode_flag=flg,
                         )
 
                         chunk_len = len(restored)
-                        original_slice = original_data[bytes_verified: bytes_verified + chunk_len]
+                        original_slice = original_data[
+                                         bytes_verified: bytes_verified + chunk_len
+                                         ]
 
                         if restored != original_slice:
                             verified_ok = False
