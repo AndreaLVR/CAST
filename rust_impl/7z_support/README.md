@@ -14,19 +14,29 @@ It includes a comprehensive **Benchmark Suite** to compare performance against i
 
 ---
 
-## 🛠️ Build Prerequisites
+## 🛠️ Prerequisites
 
-To compile this project, you need a standard Rust environment and basic build tools.
+To build this project, you only need a standard Rust environment.
 
 * **Rust & Cargo:** Install via [rustup.rs](https://rustup.rs/).
-* **Linux Users:** You must have the standard compilation tools installed (required for the linker):
-  ```bash
-  sudo apt update
-  sudo apt install build-essential
+* **Build Tools:**
+    * **Windows:** If Rust is working on your machine, you are already set (Visual Studio Build Tools are installed automatically by Rust).
+    * **Linux:** Requires standard compilation tools:
+      ```bash
+      sudo apt update
+      sudo apt install build-essential liblzma-dev pkg-config
+      ```
+    * **macOS:** Requires Xcode Command Line Tools (and optionally `xz` for system linking):
+      ```bash
+      xcode-select --install
+      # Optional (via Homebrew): brew install xz pkg-config
+      ```
+
+*Note: The project automatically compiles and statically links the necessary LZMA libraries. No manual installation of `vcpkg` or external DLLs is required.*
 
 ---
 
-## ⚙️ Configuration (Crucial)
+## ⚙️ Configuration
 
 Since this tool wraps the 7-Zip executable, **you must ensure the system can find it**.
 
@@ -159,6 +169,7 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd,brotli
 ```
+
 
 
 
