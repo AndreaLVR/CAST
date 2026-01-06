@@ -14,6 +14,18 @@ It includes a comprehensive **Benchmark Suite** to compare performance against i
 
 ---
 
+## 🛠️ Build Prerequisites
+
+To compile this project, you need a standard Rust environment and basic build tools.
+
+* **Rust & Cargo:** Install via [rustup.rs](https://rustup.rs/).
+* **Linux Users:** You must have the standard compilation tools installed (required for the linker):
+  ```bash
+  sudo apt update
+  sudo apt install build-essential
+
+---
+
 ## ⚙️ Configuration (Crucial)
 
 Since this tool wraps the 7-Zip executable, **you must ensure the system can find it**.
@@ -147,6 +159,7 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd,brotli
 ```
+
 
 
 
