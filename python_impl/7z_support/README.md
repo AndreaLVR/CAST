@@ -14,7 +14,7 @@ Unlike the `native` variant, this version combines the logical flexibility of Py
 * **Parsing:** Uses Python's `re` module (compiled C Regex) for tokenization (same as Native).
 * **Compression:** Instead of `import lzma`, this version uses `subprocess.Popen` to pipe streams:
     * **Mechanism:** `stdin` (Python) -> `7z process` -> `stdout` (Python).
-    * **Arguments:** `-mx=9` (Ultra), `-m0=lzma2:d128m` (128MB Dict), `-mmt=on` (Multithreading).
+    * **Arguments:** `-mx=9` (Ultra), `-m0=lzma2:d128m` (128MB Dict, or the size you specify using --dict-size param), `-mmt=on` (Multithreading).
 * **Memory:**
     * **Solid Mode:** Loads the entire file into RAM, then pipes it to 7z.
     * **Chunked Mode:** Stream-processing available via CLI options (pipes one chunk at a time).
