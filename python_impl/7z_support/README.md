@@ -1,4 +1,4 @@
-# CAST: Python System Mode (7z Backend) Implementation
+# CAST: System Mode (7z Backend) Python Implementation
 
 This directory contains the python **Hybrid** implementation of the CAST algorithm.
 Unlike the `native` variant, this version combines the logical flexibility of Python with the raw speed of the system's **7-Zip** executable.
