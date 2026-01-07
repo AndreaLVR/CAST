@@ -57,6 +57,9 @@ python cli.py -c input.csv output.cast -v
 
 # Chunked Compression (Low RAM, slightly lower Ratio) + Immediate Verification
 python cli.py -c input.csv output.cast --chunk-size 300MB -v
+
+# Chunked Compression (Low RAM, slightly lower Ratio) + Immediate Verification + Custom Dict size
+python cli.py -c input.csv output.cast --chunk-size 300MB -v --dict-size 128MB
 ```
 
 **Decompression:**
@@ -80,10 +83,10 @@ pip install -r requirements.txt
 Then run the suite:
 ```bash
 # Compare against all competitors
-python run_benchmarks.py --list ../files.txt --all
+python run_benchmarks.py --list input_files.txt --all
 
-# Compare against LZMA only
-python run_benchmarks.py --file data.csv --lzma
+# Compare against LZMA only using 128MB as dictionary size
+python run_benchmarks.py --file data.csv --lzma --dict-size 128MB
 
 # Benchmark with Simulated Chunking
 # (Note: Unlike the CLI, this loads the full file into RAM to ensure fair timing vs competitors)
