@@ -41,6 +41,7 @@ Since this tool wraps the 7-Zip executable, **you must ensure the system can fin
 ### 1. Install 7-Zip
 * **Windows:** Download and install from [7-zip.org](https://www.7-zip.org/).
 * **Linux:** Install via terminal (e.g., `sudo apt install p7zip-full` or `7zip`).
+* **macOS:** Install via terminal (`brew install sevenzip`)
 
 ### 2. Set the Environment Variable
 You must tell CAST where the executable is located if it is not in your global system PATH (or if you want to use a specific version).
@@ -59,6 +60,9 @@ $env:SEVEN_ZIP_PATH = "C:\Program Files\7-Zip\7z.exe"
 ```bash
 export SEVEN_ZIP_PATH="/usr/bin/7z"
 ```
+
+# Common macOS (Homebrew) path - NOTE: binary is often named '7zz' on Mac
+export SEVEN_ZIP_PATH="/opt/homebrew/bin/7zz"
 
 *(Note: Restart your terminal after running this command).*
 
@@ -167,6 +171,7 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd,brotli
 ```
+
 
 
 
