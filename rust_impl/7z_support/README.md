@@ -61,9 +61,10 @@ $env:SEVEN_ZIP_PATH = "C:\Program Files\7-Zip\7z.exe"
 export SEVEN_ZIP_PATH="/usr/bin/7z"
 ```
 
-# Common macOS (Homebrew) path - NOTE: binary is often named '7zz' on Mac
+**On macOS (Homebrew) path - NOTE: binary is often named '7zz' on Mac**
+```bash
 export SEVEN_ZIP_PATH="/opt/homebrew/bin/7zz"
-
+```
 *(Note: Restart your terminal after running this command).*
 
 ---
@@ -171,6 +172,7 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd,brotli
 ```
+
 
 
 
