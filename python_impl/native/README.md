@@ -60,6 +60,9 @@ python run_benchmarks.py --list ../files.txt --all
 # Compare against LZMA only
 python run_benchmarks.py --file data.csv --lzma
 
+# Compare against brotli and zstd only using a 64MB dict size
+python run_benchmarks.py --file data.csv --brotli --zstd --dict-size 64MB
+
 # Benchmark with Simulated Chunking
 # (Note: Unlike the CLI, this loads the full file into RAM to ensure fair timing vs competitors)
 python run_benchmarks.py --file data.csv --all --chunk-size 100MB
