@@ -77,7 +77,7 @@ cargo build --release
 
 The binary will be located at:
 * **Windows:** `target/release/cast.exe`
-* **Linux:** `target/release/cast`
+* **Linux/macOS:** `target/release/cast`
 
 ---
 
@@ -172,6 +172,7 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd,brotli
 ```
+
 
 
 
