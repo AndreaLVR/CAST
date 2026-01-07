@@ -55,7 +55,7 @@ pip install -r requirements.txt
 Then run the suite:
 ```bash
 # Compare against all competitors
-python run_benchmarks.py --list ../files.txt --all
+python run_benchmarks.py --list input_files_list.txt --all
 
 # Compare against LZMA only
 python run_benchmarks.py --file data.csv --lzma
