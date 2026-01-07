@@ -74,7 +74,7 @@ python cli.py -v output.cast
 
 To run benchmarks, you first need to install the competitor libraries:
 ```bash
-pip install -r ../requirements.txt
+pip install -r requirements.txt
 ```
 
 Then run the suite:
