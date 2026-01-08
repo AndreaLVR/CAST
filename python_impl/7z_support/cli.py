@@ -173,7 +173,7 @@ def do_compress(input_path, output_path, chunk_size=None, dict_size=None, verify
         print("\n------------------------------------------------")
         print("[*]   Starting Post-Compression Verification...")
         # Technical pause to ensure OS releases the file handle
-        time.sleep(0.5)
+        time.sleep(1)
         do_verify_standalone(output_path)
 
 
