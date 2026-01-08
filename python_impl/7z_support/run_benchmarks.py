@@ -4,7 +4,9 @@ import os
 import struct
 import time
 import zlib
-from typing import List
+import subprocess
+import shutil
+from typing import List, Optional
 
 # Optional dependencies
 try:
@@ -47,6 +49,44 @@ def parse_human_size(size_str):
             return int(s)
     except ValueError:
         return None
+
+
+def find_7z() -> Optional[str]:
+    """Locates the 7z executable."""
+    env_path = os.environ.get("SEVEN_ZIP_PATH")
+    if env_path and os.path.exists(env_path):
+        return env_path
+    return shutil.which("7z") or shutil.which("7za")
+
+
+def compress_with_7z(data: bytes, dict_size: int = 128 * 1024 * 1024) -> bytes:
+    """Helper to compress raw data using 7z CLI directly (mimicking standard XZ)."""
+    exe = find_7z()
+    if not exe:
+        raise FileNotFoundError("7z executable not found")
+
+    # Arguments to mimic 'Preset 9 | Extreme' + Multi-threading
+    # -m0=lzma2:d{size}b : Sets dictionary size precisely
+    dict_arg = f"-m0=lzma2:d{dict_size}b"
+
+    cmd = [
+        exe, "a", "-txz", "-mx=9", "-mmt=on",
+        dict_arg,
+        "-y", "-bb0", "-si", "-so", "-an"
+    ]
+
+    process = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL
+    )
+    compressed_data, _ = process.communicate(input=data)
+
+    if process.returncode != 0:
+        raise Exception(f"7z returned code {process.returncode}")
+
+    return compressed_data
 
 
 def load_file_list(list_path: str) -> List[str]:
@@ -107,6 +147,12 @@ def main() -> None:
     CHUNK_SIZE = parse_human_size(args.chunk_size)
     DICT_SIZE = parse_human_size(args.dict_size)  # Can be None
 
+    # Default dict size used for logic (128MB)
+    EFFECTIVE_DICT_SIZE = DICT_SIZE if DICT_SIZE else 128 * 1024 * 1024
+
+    # Check for 7-Zip availability for competitors
+    SEVEN_ZIP_EXE = find_7z()
+
     # Checks
     if RUN_BROTLI and not brotli:
         print("NOTE: 'brotli' module missing. Skipping.")
@@ -131,13 +177,14 @@ def main() -> None:
     )
 
     # Config Info
-    dict_info = format_bytes(DICT_SIZE) if DICT_SIZE else "Default (128MB)"
-    if CHUNK_SIZE:
-        print(
-            f"CAST Config: CHUNKED ({format_bytes(CHUNK_SIZE)}) | Dict: {dict_info}"
-        )
+    dict_info = format_bytes(EFFECTIVE_DICT_SIZE)
+    mode_info = f"SOLID (Single Block)" if not CHUNK_SIZE else f"CHUNKED ({format_bytes(CHUNK_SIZE)})"
+
+    print(f"CAST Config: {mode_info} | Dict: {dict_info}")
+    if SEVEN_ZIP_EXE:
+        print(f"System 7z:   DETECTED ({SEVEN_ZIP_EXE})")
     else:
-        print(f"CAST Config: SOLID (Single Block) | Dict: {dict_info}")
+        print(f"System 7z:   NOT FOUND - Using slow Python LZMA fallback")
     print("=" * 75)
 
     for file_path in files_to_test:
@@ -172,76 +219,12 @@ def main() -> None:
         # Used to store the strategy name from CAST
         cast_strategy_used = "Unknown"
 
-        # --- 1. LZMA (Always Solid) ---
-        if RUN_LZMA:
-            print("[1] LZMA (Extreme)... ", end="", flush=True)
-            start = time.time()
-            try:
-                # CHANGED: Apply dict_size parity to competitor!
-                if DICT_SIZE is not None:
-                    # We must use filters to enforce dict_size
-                    lzma_filters = [{
-                        "id": lzma.FILTER_LZMA2,
-                        "preset": 9 | lzma.PRESET_EXTREME,
-                        "dict_size": DICT_SIZE
-                    }]
-                    c_data = lzma.compress(
-                        original_data,
-                        format=lzma.FORMAT_XZ,
-                        check=lzma.CHECK_CRC32,
-                        filters=lzma_filters
-                    )
-                else:
-                    # Legacy/Default behavior
-                    c_data = lzma.compress(
-                        original_data, format=lzma.FORMAT_XZ, preset=9 | lzma.PRESET_EXTREME
-                    )
-
-                times["LZMA"] = time.time() - start
-                results["LZMA"] = len(c_data)
-                print(f"Done ({times['LZMA']:.2f}s)")
-                del c_data
-            except Exception as e:
-                print(f"ERR: {e}")
-
-        # --- 2. ZSTD (Always Solid) ---
-        if RUN_ZSTD:
-            print("[2] Zstd (Level 22)...  ", end="", flush=True)
-            start = time.time()
-            try:
-                cctx = zstd.ZstdCompressor(level=22)
-                c_data = cctx.compress(original_data)
-                times["Zstd"] = time.time() - start
-                results["Zstd"] = len(c_data)
-                print(f"Done ({times['Zstd']:.2f}s)")
-                del c_data
-            except Exception as e:
-                print(f"ERR: {e}")
-
-        # --- 3. BROTLI (Always Solid) ---
-        if RUN_BROTLI:
-            print("[3] Brotli (Q 11)...    ", end="", flush=True)
-            start = time.time()
-            try:
-                c_data = brotli.compress(
-                    original_data, mode=brotli.MODE_GENERIC, quality=11
-                )
-                times["Brotli"] = time.time() - start
-                results["Brotli"] = len(c_data)
-                print(f"Done ({times['Brotli']:.2f}s)")
-                del c_data
-            except Exception as e:
-                print(f"ERR: {e}")
-
-        # --- 4. CAST (Solid or Chunked) ---
+        # --- 1. CAST (Executed FIRST) ---
         mode_label = f"CAST ({'Chunked' if CHUNK_SIZE else 'Solid'})"
-        print(f"[4] {mode_label:<15} ", end="", flush=True)
+        print(f"[1] {mode_label:<15} ", end="", flush=True)
         start = time.time()
         try:
             full_blob = bytearray()
-
-            # Set effective dict size for calls (Default 128MB if None)
-            call_dict_size = DICT_SIZE if DICT_SIZE else 128 * 1024 * 1024
 
             if CHUNK_SIZE:
                 # CHUNKED PROCESSING
@@ -253,8 +236,8 @@ def main() -> None:
                     chunk_crc = zlib.crc32(chunk)
                     compressor = CASTCompressor()
 
-                    # CHANGED: Pass dict_size
-                    res = compressor.compress(chunk, dict_size=call_dict_size)
+                    # Pass dict_size
+                    res = compressor.compress(chunk, dict_size=EFFECTIVE_DICT_SIZE)
 
                     # Handle 5-element return tuple
                     if isinstance(res, tuple):
@@ -285,8 +268,8 @@ def main() -> None:
             else:
                 # SOLID PROCESSING
                 compressor = CASTCompressor()
-                # CHANGED: Pass dict_size
-                res = compressor.compress(original_data, dict_size=call_dict_size)
+                # Pass dict_size
+                res = compressor.compress(original_data, dict_size=EFFECTIVE_DICT_SIZE)
 
                 if isinstance(res, tuple):
                     if len(res) >= 5:
@@ -321,6 +304,73 @@ def main() -> None:
 
         except Exception as e:
             print(f"\n[!] CAST Failed: {e}")
+
+        # --- 2. LZMA (Competitor) ---
+        if RUN_LZMA:
+            # Decide label based on backend
+            backend_label = "7-Zip" if SEVEN_ZIP_EXE else "Native Python"
+            print(f"[2] LZMA ({backend_label})... ", end="", flush=True)
+
+            start = time.time()
+            try:
+                if SEVEN_ZIP_EXE:
+                    # FAST PATH: Use 7-Zip executable
+                    c_data = compress_with_7z(original_data, EFFECTIVE_DICT_SIZE)
+                else:
+                    # SLOW PATH: Python Library
+                    # Still respect dict_size if possible via filters
+                    if DICT_SIZE is not None:
+                        lzma_filters = [{
+                            "id": lzma.FILTER_LZMA2,
+                            "preset": 9 | lzma.PRESET_EXTREME,
+                            "dict_size": DICT_SIZE
+                        }]
+                        c_data = lzma.compress(
+                            original_data,
+                            format=lzma.FORMAT_XZ,
+                            check=lzma.CHECK_CRC32,
+                            filters=lzma_filters
+                        )
+                    else:
+                        c_data = lzma.compress(
+                            original_data, format=lzma.FORMAT_XZ, preset=9 | lzma.PRESET_EXTREME
+                        )
+
+                times["LZMA"] = time.time() - start
+                results["LZMA"] = len(c_data)
+                print(f"Done ({times['LZMA']:.2f}s)")
+                del c_data
+            except Exception as e:
+                print(f"ERR: {e}")
+
+        # --- 3. ZSTD (Always Solid) ---
+        if RUN_ZSTD:
+            print("[3] Zstd (Level 22)...  ", end="", flush=True)
+            start = time.time()
+            try:
+                cctx = zstd.ZstdCompressor(level=22)
+                c_data = cctx.compress(original_data)
+                times["Zstd"] = time.time() - start
+                results["Zstd"] = len(c_data)
+                print(f"Done ({times['Zstd']:.2f}s)")
+                del c_data
+            except Exception as e:
+                print(f"ERR: {e}")
+
+        # --- 4. BROTLI (Always Solid) ---
+        if RUN_BROTLI:
+            print("[4] Brotli (Q 11)...    ", end="", flush=True)
+            start = time.time()
+            try:
+                c_data = brotli.compress(
+                    original_data, mode=brotli.MODE_GENERIC, quality=11
+                )
+                times["Brotli"] = time.time() - start
+                results["Brotli"] = len(c_data)
+                print(f"Done ({times['Brotli']:.2f}s)")
+                del c_data
+            except Exception as e:
+                print(f"ERR: {e}")
 
         # --- RANKING & DISPLAY ---
         print("-" * 75)
