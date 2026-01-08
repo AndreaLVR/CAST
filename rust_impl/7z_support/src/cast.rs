@@ -482,7 +482,7 @@ impl CASTCompressor {
         let mut raw_ids = Vec::with_capacity(self.stream_template_ids.len() * 2);
         let mut id_mode_flag;
 
-        // [FIX] Calculate total rows for Single Template Mode logic
+        // [FIX] Calculate total rows for Hybrid Logic
         let total_rows = self.stream_template_ids.len() as u32;
 
         if num_templates == 1 { id_mode_flag = 3; }
@@ -544,10 +544,7 @@ impl CASTCompressor {
         } else {
              let len_reg = raw_registry.len() as u32;
 
-             // [FIX SAFE] HYBRID LOGIC FOR BIT-PERFECT BACKWARDS COMPATIBILITY
-             // If Single Template Mode:
-             // - If vars exist -> Write 0 (Legacy behavior, identical output)
-             // - If NO vars (Bug Case) -> Write total_rows (Fix)
+             // [FIX SAFE] Hybrid Logic for Bit-Perfect Backward Compatibility
              let len_ids = if (id_mode_flag & 0x7F) == 3 {
                  // Check if the single template has variables (columns)
                  let has_vars = if let Some(cols) = self.columns_storage.get(&self.stream_template_ids[0]) {
@@ -584,7 +581,8 @@ impl CASTCompressor {
 
 pub struct CASTDecompressor;
 impl CASTDecompressor {
-    pub fn decompress(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag_raw: u8) -> Vec<u8> {
+    // CHANGED: Returns Result instead of panicking
+    pub fn decompress(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag_raw: u8) -> Result<Vec<u8>, String> {
         let start_time = Instant::now();
 
         if id_flag_raw == 255 {
@@ -592,7 +590,7 @@ impl CASTDecompressor {
             let mut h = Hasher::new();
             h.update(&data);
             if h.finalize() != expected_crc { eprintln!("CRC ERROR (Passthrough)!"); }
-            return data;
+            return Ok(data);
         }
 
         let is_latin1 = (id_flag_raw & 0x80) != 0;
@@ -607,21 +605,23 @@ impl CASTDecompressor {
 
         if is_unified {
             let full = decompress_with_7z(c_vars);
-            if full.len() < 8 { return Vec::new(); }
-            let len_reg = u32::from_le_bytes(full[0..4].try_into().unwrap()) as usize;
+            if full.len() < 8 { return Err("Corrupted Archive (Header too short)".to_string()); }
 
-            // [FIX] Read the value (can be len_ids OR total_rows)
+            let len_reg = u32::from_le_bytes(full[0..4].try_into().unwrap()) as usize;
+            // [FIX] Read value (len_ids OR total_rows)
             let len_ids_or_rows = u32::from_le_bytes(full[4..8].try_into().unwrap()) as usize;
 
             let mut off = 8;
+            if off + len_reg > full.len() { return Err("Corrupted Archive (Registry bounds)".to_string()); }
             reg_data_bytes = full[off..off+len_reg].to_vec();
             off += len_reg;
 
             if id_flag != 3 {
+                if off + len_ids_or_rows > full.len() { return Err("Corrupted Archive (IDs bounds)".to_string()); }
                 ids_data_bytes = full[off..off+len_ids_or_rows].to_vec();
                 off += len_ids_or_rows;
             } else {
-                // [FIX] In Mode 3, this value is the row count. Don't read bytes.
+                // [FIX] In Mode 3, this value is the row count
                 num_rows_single_template_header = len_ids_or_rows;
             }
             vars_data_bytes = full[off..].to_vec();
@@ -631,7 +631,7 @@ impl CASTDecompressor {
             vars_data_bytes = decompress_with_7z(c_vars);
         }
 
-        let reg_str = String::from_utf8(reg_data_bytes).expect("Registry UTF-8 Error");
+        let reg_str = String::from_utf8(reg_data_bytes).map_err(|_| "Registry corrupted (not UTF-8)".to_string())?;
         // Split on REG_SEPARATOR
         let skeletons: Vec<&str> = reg_str.split(REG_SEPARATOR).collect();
 
@@ -639,8 +639,10 @@ impl CASTDecompressor {
         if id_flag == 2 {
             for &b in &ids_data_bytes { template_ids.push(b as usize); }
         } else if id_flag == 1 {
+            if ids_data_bytes.len() % 4 != 0 { return Err("Corrupted IDs (Alignment u32)".to_string()); }
             for ch in ids_data_bytes.chunks_exact(4) { template_ids.push(u32::from_le_bytes(ch.try_into().unwrap()) as usize); }
         } else if id_flag == 0 {
+            if ids_data_bytes.len() % 2 != 0 { return Err("Corrupted IDs (Alignment u16)".to_string()); }
             for ch in ids_data_bytes.chunks_exact(2) { template_ids.push(u16::from_le_bytes(ch.try_into().unwrap()) as usize); }
         }
 
@@ -717,10 +719,7 @@ impl CASTDecompressor {
 
         // [FIX] Logic with Backward Compatibility
         let num_rows_single_template = if id_flag == 3 {
-             // Priority 1: Use the new header value (static files support)
              let mut n = num_rows_single_template_header;
-
-             // Priority 2: Fallback for Legacy Archives (where header was 0 but vars exist)
              if n == 0 && !columns_storage.is_empty() && !columns_storage[0].is_empty() {
                  n = columns_storage[0][0].len();
              }
@@ -728,6 +727,9 @@ impl CASTDecompressor {
         } else { 0 };
 
         let mut reconstruct = |t_id: usize| {
+             // Bounds check
+             if t_id >= skel_parts_cache.len() { return; }
+
              let parts = &skel_parts_cache[t_id];
              let queues = &mut columns_storage[t_id];
              for (idx, part) in parts.iter().enumerate() {
@@ -755,6 +757,6 @@ impl CASTDecompressor {
         let duration = start_time.elapsed();
         println!("Decompression (7-Zip) finished in {:.4} seconds", duration.as_secs_f64());
 
-        final_data
+        Ok(final_data)
     }
 }
