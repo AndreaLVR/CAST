@@ -146,8 +146,8 @@ fn print_usage() {
           -d <in> <out>      Decompress CAST file to original format\n  \
           -v <file>          Verify the integrity of a CAST file\n\n\
         Options:\n  \
-          --chunk-size <S>   Process file in chunks (e.g., 512MB, 1GB, 50000B)\n\
-          --dict-size <S>    Set 7-Zip LZMA Dictionary size (Default: 128MB)\n\
+          --chunk-size <S>   Process file in chunks (e.g., 512MB, 1GB, 50000B)\n  \
+          --dict-size <S>    Set 7-Zip LZMA Dictionary size (Default: 128MB)\n  \
           -v, --verify       (During compression) Run an immediate integrity check\n\n\
         Examples:\n  \
           cargo run --release -- -c data.csv archive.gtf\n  \
