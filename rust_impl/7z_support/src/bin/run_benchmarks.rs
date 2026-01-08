@@ -22,6 +22,12 @@ struct BenchmarkResult {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
+    // [FIX] Aggiunto controllo helper iniziale
+    if args.len() < 2 {
+        print_bench_usage();
+        return;
+    }
+
     // 1. Parsing --chunk-size <SIZE>
     let mut chunk_size_bytes: Option<usize> = None;
     if let Some(pos) = args.iter().position(|arg| arg == "--chunk-size") {
@@ -56,6 +62,7 @@ fn main() {
 
     if list_path_opt.is_none() {
         eprintln!("[!]  ERROR: Missing '--list <file.txt>'");
+        print_bench_usage(); // Suggest usage on error
         std::process::exit(1);
     }
     let list_path = list_path_opt.unwrap();
@@ -67,6 +74,7 @@ fn main() {
 
     if competitors_opt.is_none() {
         eprintln!("[!]  ERROR: Missing '--compare-with <algos>'");
+        print_bench_usage(); // Suggest usage on error
         std::process::exit(1);
     }
     let competitors_str = competitors_opt.unwrap();
@@ -379,7 +387,7 @@ fn run_competitor_solid(algo: &str, data: &[u8], dict_size: u32, results: &mut V
     }
 }
 
-// --- HELPERS (Invariati) ---
+// --- HELPERS ---
 
 fn print_result(seconds: f64, size: usize, orig: usize) {
     let ratio = if size > 0 { orig as f64 / size as f64 } else { 0.0 };
@@ -438,4 +446,22 @@ fn format_num_simple(n: usize) -> String {
         result.push(c);
     }
     result.chars().rev().collect::<String>()
+}
+
+// [AGGIUNTA] La funzione Helper mancante
+fn print_bench_usage() {
+    println!(
+        "\nCAST Benchmarking Harness (7-Zip Backend)\n\n\
+        Usage:\n  \
+          cargo run --release --bin run_benchmarks -- --list <LIST> --compare-with <ALGOS> [OPTIONS]\n\n\
+        Arguments:\n  \
+          --list <file.txt>      File containing a list of paths to test (one per line)\n  \
+          --compare-with <algos> Comma-separated list of competitors (e.g. 'lzma2,zstd')\n                         or 'all' for [lzma2, brotli, zstd]\n\n\
+        Options:\n  \
+          --chunk-size <SIZE>    Run CAST in Chunked Mode (e.g., 512MB, 1GB). Default: Solid Mode\n  \
+          --dict-size <SIZE>     Set 7-Zip LZMA Dictionary Size (Default: 128MB)\n\n\
+        Examples:\n  \
+          run_benchmarks --list datasets.txt --compare-with lzma2\n  \
+          run_benchmarks --list big_logs.txt --compare-with all --chunk-size 512MB --dict-size 256MB"
+    );
 }
