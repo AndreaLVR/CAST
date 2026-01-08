@@ -14,13 +14,34 @@ It includes a comprehensive **Benchmark Suite** to compare performance against i
 
 ---
 
-## ⚙️ Configuration (Crucial)
+## 🛠️ Prerequisites
+
+To build this project, you only need a standard Rust environment.
+
+* **Rust & Cargo:** Install via [rustup.rs](https://rustup.rs/).
+* **Build Tools:**
+    * **Windows:** If Rust is working on your machine, you are already set (Visual Studio Build Tools are installed automatically by Rust).
+    * **Linux:** Requires standard compilation tools:
+      ```bash
+      sudo apt update
+      sudo apt install build-essential liblzma-dev pkg-config
+      ```
+    * **macOS:** Requires Xcode Command Line Tools (and optionally `xz` for system linking):
+      ```bash
+      xcode-select --install
+      brew install xz pkg-config
+      ```
+
+---
+
+## ⚙️ Configuration
 
 Since this tool wraps the 7-Zip executable, **you must ensure the system can find it**.
 
 ### 1. Install 7-Zip
 * **Windows:** Download and install from [7-zip.org](https://www.7-zip.org/).
 * **Linux:** Install via terminal (e.g., `sudo apt install p7zip-full` or `7zip`).
+* **macOS:** Install via terminal (`brew install sevenzip`)
 
 ### 2. Set the Environment Variable
 You must tell CAST where the executable is located if it is not in your global system PATH (or if you want to use a specific version).
@@ -40,6 +61,10 @@ $env:SEVEN_ZIP_PATH = "C:\Program Files\7-Zip\7z.exe"
 export SEVEN_ZIP_PATH="/usr/bin/7z"
 ```
 
+**On macOS (Homebrew) path - NOTE: binary is often named '7zz' on Mac**
+```bash
+export SEVEN_ZIP_PATH="/opt/homebrew/bin/7zz"
+```
 *(Note: Restart your terminal after running this command).*
 
 ---
@@ -52,7 +77,7 @@ cargo build --release
 
 The binary will be located at:
 * **Windows:** `target/release/cast.exe`
-* **Linux:** `target/release/cast`
+* **Linux/macOS:** `target/release/cast`
 
 ---
 
@@ -147,6 +172,13 @@ cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd
 ```powershell
 cargo run --release --bin run_benchmarks -- --list files.txt --compare-with zstd,brotli
 ```
+
+
+
+
+
+
+
 
 
 

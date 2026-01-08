@@ -1,6 +1,6 @@
-# CAST: System Mode (7z Backend) Implementation
+# CAST: System Mode (7z Backend) Python Implementation
 
-This directory contains the **Hybrid** implementation of the CAST algorithm.
+This directory contains the python **Hybrid** implementation of the CAST algorithm.
 Unlike the `native` variant, this version combines the logical flexibility of Python with the raw speed of the system's **7-Zip** executable.
 
 ## 🎯 Design Philosophy
@@ -14,7 +14,7 @@ Unlike the `native` variant, this version combines the logical flexibility of Py
 * **Parsing:** Uses Python's `re` module (compiled C Regex) for tokenization (same as Native).
 * **Compression:** Instead of `import lzma`, this version uses `subprocess.Popen` to pipe streams:
     * **Mechanism:** `stdin` (Python) -> `7z process` -> `stdout` (Python).
-    * **Arguments:** `-mx=9` (Ultra), `-m0=lzma2:d128m` (128MB Dict), `-mmt=on` (Multithreading).
+    * **Arguments:** `-mx=9` (Ultra), `-m0=lzma2:d128m` (128MB Dict, or the size you specify using --dict-size param), `-mmt=on` (Multithreading).
 * **Memory:**
     * **Solid Mode:** Loads the entire file into RAM, then pipes it to 7z.
     * **Chunked Mode:** Stream-processing available via CLI options (pipes one chunk at a time).
@@ -57,6 +57,9 @@ python cli.py -c input.csv output.cast -v
 
 # Chunked Compression (Low RAM, slightly lower Ratio) + Immediate Verification
 python cli.py -c input.csv output.cast --chunk-size 300MB -v
+
+# Chunked Compression (Low RAM, slightly lower Ratio) + Immediate Verification + Custom Dict size
+python cli.py -c input.csv output.cast --chunk-size 300MB -v --dict-size 128MB
 ```
 
 **Decompression:**
@@ -74,16 +77,16 @@ python cli.py -v output.cast
 
 To run benchmarks, you first need to install the competitor libraries:
 ```bash
-pip install -r ../requirements.txt
+pip install -r requirements.txt
 ```
 
 Then run the suite:
 ```bash
 # Compare against all competitors
-python run_benchmarks.py --list ../files.txt --all
+python run_benchmarks.py --list input_files.txt --all
 
-# Compare against LZMA only
-python run_benchmarks.py --file data.csv --lzma
+# Compare against LZMA only using 128MB as dictionary size
+python run_benchmarks.py --file data.csv --lzma --dict-size 128MB
 
 # Benchmark with Simulated Chunking
 # (Note: Unlike the CLI, this loads the full file into RAM to ensure fair timing vs competitors)

@@ -9,7 +9,7 @@ use crc32fast::Hasher;
 use cast::cast::{
     CASTCompressor,
     CASTDecompressor,
-    compress_with_7z // Make sure "pub fn compress_with_7z" is in cast.rs
+    compress_with_7z
 };
 
 // Struct to store results for final ranking
@@ -21,6 +21,12 @@ struct BenchmarkResult {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+
+    // [FIX] Aggiunto controllo helper iniziale
+    if args.len() < 2 {
+        print_bench_usage();
+        return;
+    }
 
     // 1. Parsing --chunk-size <SIZE>
     let mut chunk_size_bytes: Option<usize> = None;
@@ -35,24 +41,40 @@ fn main() {
         }
     }
 
-    // 2. Parsing --list
+    // 2. Parsing --dict-size <SIZE> (NEW)
+    let mut dict_size_bytes: u32 = 128 * 1024 * 1024; // Default 128 MB
+    if let Some(pos) = args.iter().position(|arg| arg == "--dict-size") {
+        if pos + 1 < args.len() {
+            let val = &args[pos+1];
+            if let Some(s) = parse_size(val) {
+                dict_size_bytes = s as u32;
+            } else {
+                eprintln!("[!]  Error: Invalid dict size format: '{}'.", val);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // 3. Parsing --list
     let list_path_opt = args.windows(2)
         .find(|w| w[0] == "--list")
         .map(|w| w[1].clone());
 
     if list_path_opt.is_none() {
         eprintln!("[!]  ERROR: Missing '--list <file.txt>'");
+        print_bench_usage(); // Suggest usage on error
         std::process::exit(1);
     }
     let list_path = list_path_opt.unwrap();
 
-    // 3. Parsing --compare-with
+    // 4. Parsing --compare-with
     let competitors_opt = args.windows(2)
         .find(|w| w[0] == "--compare-with")
         .map(|w| w[1].clone());
 
     if competitors_opt.is_none() {
         eprintln!("[!]  ERROR: Missing '--compare-with <algos>'");
+        print_bench_usage(); // Suggest usage on error
         std::process::exit(1);
     }
     let competitors_str = competitors_opt.unwrap();
@@ -99,6 +121,7 @@ fn main() {
     } else {
         println!("CAST Chunking:      DISABLED (Global Optimization)");
     }
+    println!("LZMA Dict Size:     {}", format_bytes(dict_size_bytes as usize));
     println!("Competitors:        {:?} (Always Solid/Global)", competitors);
     println!("Files to test:      {}", files_to_test.len());
     println!("--------------------------------------------------\n");
@@ -144,28 +167,23 @@ fn main() {
         // 1. CAST EXECUTION (Chunked or Solid)
         // =========================================================
         if let Some(chunk_size) = chunk_size_bytes {
-            // CAST Chunked
-            run_cast_chunked(&file_path, chunk_size, file_len, &mut results);
+            // CAST Chunked (Pass dict_size)
+            run_cast_chunked(&file_path, chunk_size, file_len, dict_size_bytes, &mut results);
         } else {
-            // CAST Solid
+            // CAST Solid (Pass dict_size)
             let data = match std::fs::read(&file_path) {
                 Ok(d) => d,
                 Err(e) => { eprintln!("[!]  Read Error (CAST): {}", e); Vec::new() }
             };
             if !data.is_empty() {
-                run_cast_solid(&data, &mut results);
+                run_cast_solid(&data, dict_size_bytes, &mut results);
             }
         }
 
         // =========================================================
         // 2. COMPETITORS EXECUTION (Always Solid)
         // =========================================================
-        // Dobbiamo caricare il file intero in RAM per i competitor se non lo abbiamo già fatto.
-        // Nota: Questo è pesante per la RAM, ma necessario per un confronto "Global".
-
         if !competitors.is_empty() {
-             // Rileggiamo il file per sicurezza (per evitare complessità di ownership con il blocco sopra)
-             // Il sistema operativo userà la cache del disco, quindi sarà veloce.
              let full_data = match std::fs::read(&file_path) {
                 Ok(d) => d,
                 Err(e) => { eprintln!("[!]  Read Error (Competitors): {}", e); Vec::new() }
@@ -173,7 +191,8 @@ fn main() {
 
             if !full_data.is_empty() {
                 for algo in &competitors {
-                    run_competitor_solid(algo, &full_data, &mut results);
+                    // Pass dict_size to maintain parity with LZMA
+                    run_competitor_solid(algo, &full_data, dict_size_bytes, &mut results);
                 }
             }
         }
@@ -184,7 +203,6 @@ fn main() {
             continue;
         }
 
-        // Sort by size (ascending) -> smallest wins
         results.sort_by_key(|r| r.size);
 
         let winner = &results[0];
@@ -238,13 +256,14 @@ fn main() {
 
 // --- CAST LOGIC ---
 
-fn run_cast_solid(data: &[u8], results: &mut Vec<BenchmarkResult>) {
+fn run_cast_solid(data: &[u8], dict_size: u32, results: &mut Vec<BenchmarkResult>) {
     let orig_len = data.len();
     print!("\n[*] Running CAST (Global)...");
     io::stdout().flush().unwrap();
 
     let start = Instant::now();
-    let mut compressor = CASTCompressor::new(true);
+    // CHANGED: Pass dict_size
+    let mut compressor = CASTCompressor::new(true, dict_size);
     let (r, i, v, flag, _) = compressor.compress(data);
     let duration = start.elapsed().as_secs_f64();
     let size = 17 + r.len() + i.len() + v.len();
@@ -268,7 +287,7 @@ fn run_cast_solid(data: &[u8], results: &mut Vec<BenchmarkResult>) {
     }
 }
 
-fn run_cast_chunked(file_path: &str, chunk_size: usize, file_len: usize, results: &mut Vec<BenchmarkResult>) {
+fn run_cast_chunked(file_path: &str, chunk_size: usize, file_len: usize, dict_size: u32, results: &mut Vec<BenchmarkResult>) {
     print!("\n[*] Running CAST (Chunked)...");
     io::stdout().flush().unwrap();
 
@@ -295,7 +314,8 @@ fn run_cast_chunked(file_path: &str, chunk_size: usize, file_len: usize, results
 
         // Compress
         let start = Instant::now();
-        let mut compressor = CASTCompressor::new(true);
+        // CHANGED: Pass dict_size
+        let mut compressor = CASTCompressor::new(true, dict_size);
         let (r, i, v, flag, _) = compressor.compress(chunk_data);
         total_time += start.elapsed().as_secs_f64();
 
@@ -326,7 +346,7 @@ fn run_cast_chunked(file_path: &str, chunk_size: usize, file_len: usize, results
 
 // --- COMPETITORS LOGIC (ALWAYS SOLID) ---
 
-fn run_competitor_solid(algo: &str, data: &[u8], results: &mut Vec<BenchmarkResult>) {
+fn run_competitor_solid(algo: &str, data: &[u8], dict_size: u32, results: &mut Vec<BenchmarkResult>) {
     let orig_len = data.len();
     match algo {
         "lzma2" => {
@@ -334,7 +354,8 @@ fn run_competitor_solid(algo: &str, data: &[u8], results: &mut Vec<BenchmarkResu
             print!("\n[*]  Running {} (Global/Solid)...", name);
             io::stdout().flush().unwrap();
             let start = Instant::now();
-            let c = compress_with_7z(data); // Usa la tua funzione helper che chiama 7z
+            // CHANGED: Pass dict_size to your 7z helper
+            let c = compress_with_7z(data, dict_size);
             let duration = start.elapsed().as_secs_f64();
             let size = c.len();
             print_result(duration, size, orig_len);
@@ -366,7 +387,7 @@ fn run_competitor_solid(algo: &str, data: &[u8], results: &mut Vec<BenchmarkResu
     }
 }
 
-// --- HELPERS (Invariati) ---
+// --- HELPERS ---
 
 fn print_result(seconds: f64, size: usize, orig: usize) {
     let ratio = if size > 0 { orig as f64 / size as f64 } else { 0.0 };
@@ -425,4 +446,22 @@ fn format_num_simple(n: usize) -> String {
         result.push(c);
     }
     result.chars().rev().collect::<String>()
+}
+
+// [AGGIUNTA] La funzione Helper mancante
+fn print_bench_usage() {
+    println!(
+        "\nCAST Benchmarking Harness (7-Zip Backend)\n\n\
+        Usage:\n  \
+          cargo run --release --bin run_benchmarks -- --list <LIST> --compare-with <ALGOS> [OPTIONS]\n\n\
+        Arguments:\n  \
+          --list <file.txt>      File containing a list of paths to test (one per line)\n  \
+          --compare-with <algos> Comma-separated list of competitors (e.g. 'lzma2,zstd')\n                         or 'all' for [lzma2, brotli, zstd]\n\n\
+        Options:\n  \
+          --chunk-size <SIZE>    Run CAST in Chunked Mode (e.g., 512MB, 1GB). Default: Solid Mode\n  \
+          --dict-size <SIZE>     Set 7-Zip LZMA Dictionary Size (Default: 128MB)\n\n\
+        Examples:\n  \
+          run_benchmarks --list datasets.txt --compare-with lzma2\n  \
+          run_benchmarks --list big_logs.txt --compare-with all --chunk-size 512MB --dict-size 256MB"
+    );
 }

@@ -77,6 +77,21 @@ fn is_aggr_char(b: u8) -> bool {
     (b >= b'0' && b <= b'9') || b == b'_' || b == b'.' || b == b'-' || b == b':'
 }
 
+// Helper per Binary Guard (Aggiunto per parità con Paper/Python)
+#[inline(always)]
+fn is_likely_binary(data: &[u8]) -> bool {
+    let limit = std::cmp::min(data.len(), 4096);
+    let sample = &data[..limit];
+    let mut control_count = 0;
+    for &b in sample {
+        // 0..8 (Bin), 9..13 (Space safe), 14..31 (Bin), 127 (DEL safe-ish)
+        if b < 9 || (b > 13 && b < 32) {
+            control_count += 1;
+        }
+    }
+    (control_count as f64 / limit as f64) > 0.01
+}
+
 #[inline(always)]
 fn match_strict_number(bytes: &[u8]) -> usize {
     let len = bytes.len();
@@ -210,10 +225,9 @@ fn encode_back_to_latin1(utf8_data: Vec<u8>) -> Vec<u8> {
     s.chars().map(|c| c as u8).collect()
 }
 
-pub fn compress_buffer_native(data: &[u8], multithread: bool) -> Vec<u8> {
+// CHANGED: Added `dict_size` parameter to make it configurable
+pub fn compress_buffer_native(data: &[u8], multithread: bool, dict_size: u32) -> Vec<u8> {
     if data.is_empty() { return Vec::new(); }
-
-    let dict_size = 128 * 1024 * 1024; // 128 MB Dictionary
 
     let effective_multithread = if multithread && (data.len() as u32) < dict_size {
         false
@@ -222,7 +236,7 @@ pub fn compress_buffer_native(data: &[u8], multithread: bool) -> Vec<u8> {
     };
 
     let mut opts = LzmaOptions::new_preset(9 | LZMA_PRESET_EXTREME).unwrap();
-    opts.dict_size(dict_size);
+    opts.dict_size(dict_size); // Uses the passed dictionary size
 
     let mut filters = Filters::new();
     filters.lzma2(&opts);
@@ -274,10 +288,12 @@ pub struct CASTCompressor {
     next_template_id: u32,
     mode: ParsingMode,
     multithread: bool,
+    dict_size: u32, // CHANGED: Added field to store dictionary size
 }
 
 impl CASTCompressor {
-    pub fn new(multithread: bool) -> Self {
+    // CHANGED: new() now accepts dict_size
+    pub fn new(multithread: bool, dict_size: u32) -> Self {
         CASTCompressor {
             template_map: HashMap::new(),
             skeletons_list: Vec::new(),
@@ -286,6 +302,7 @@ impl CASTCompressor {
             next_template_id: 0,
             mode: ParsingMode::Strict,
             multithread,
+            dict_size,
         }
     }
 
@@ -312,6 +329,11 @@ impl CASTCompressor {
     }
 
     pub fn compress(&mut self, input_data: &[u8]) -> (Vec<u8>, Vec<u8>, Vec<u8>, u8, String) {
+        // [FIX] BINARY GUARD (Allineato al Paper)
+        if is_likely_binary(input_data) {
+            return self.create_passthrough(input_data, "Binary Guard Detected");
+        }
+
         let (text_cow, is_latin1) = match std::str::from_utf8(input_data) {
             Ok(s) => (Cow::Borrowed(s), false),
             Err(_) => {
@@ -490,10 +512,11 @@ impl CASTCompressor {
         };
 
         // 7. Compressione Finale (Native)
+        // CHANGED: Pass self.dict_size to calls
         if decision_mode == "SPLIT" {
-            let c_reg = compress_buffer_native(&raw_registry, self.multithread);
-            let c_ids = compress_buffer_native(&raw_ids, self.multithread);
-            let c_vars = compress_buffer_native(&vars_buffer, self.multithread);
+            let c_reg = compress_buffer_native(&raw_registry, self.multithread, self.dict_size);
+            let c_ids = compress_buffer_native(&raw_ids, self.multithread, self.dict_size);
+            let c_vars = compress_buffer_native(&vars_buffer, self.multithread, self.dict_size);
             (c_reg, c_ids, c_vars, id_mode_flag, mode_str.to_string())
         } else {
             let len_reg = raw_registry.len() as u32;
@@ -504,14 +527,15 @@ impl CASTCompressor {
             solid.extend_from_slice(&raw_registry);
             solid.extend_from_slice(&raw_ids);
             solid.extend_from_slice(&vars_buffer);
-            let c_solid = compress_buffer_native(&solid, self.multithread);
+            let c_solid = compress_buffer_native(&solid, self.multithread, self.dict_size);
             (Vec::new(), Vec::new(), c_solid, id_mode_flag, mode_str.to_string())
         }
     }
 
     fn create_passthrough(&self, data: &[u8], reason: &str) -> (Vec<u8>, Vec<u8>, Vec<u8>, u8, String) {
         println!("[!] Switching to Passthrough ({})", reason);
-        let c_vars = compress_buffer_native(data, self.multithread);
+        // CHANGED: Pass self.dict_size
+        let c_vars = compress_buffer_native(data, self.multithread, self.dict_size);
         (Vec::new(), Vec::new(), c_vars, 255, reason.to_string())
     }
 }

@@ -35,6 +35,9 @@ python cli.py -c input.csv output.cast -v
 # Chunked Compression (Low RAM, slightly lower Ratio) + Immediate Verification
 python cli.py -c input.csv output.cast --chunk-size 300MB -v
 
+# Chunked Compression (Low RAM, slightly lower Ratio) + Immediate Verification + Custom Dict size
+python cli.py -c input.csv output.cast --chunk-size 300MB -v --dict-size 64MB
+
 # Decompression
 python cli.py -d output.cast restored.csv
 
@@ -46,16 +49,19 @@ python cli.py -v output.cast
 
 To run benchmarks, you first need to install the competitor libraries:
 ```bash
-pip install -r ../requirements.txt
+pip install -r requirements.txt
 ```
 
 Then run the suite:
 ```bash
 # Compare against all competitors
-python run_benchmarks.py --list ../files.txt --all
+python run_benchmarks.py --list input_files_list.txt --all
 
 # Compare against LZMA only
 python run_benchmarks.py --file data.csv --lzma
+
+# Compare against brotli and zstd only using a 64MB dict size
+python run_benchmarks.py --file data.csv --brotli --zstd --dict-size 64MB
 
 # Benchmark with Simulated Chunking
 # (Note: Unlike the CLI, this loads the full file into RAM to ensure fair timing vs competitors)
