@@ -22,7 +22,7 @@ const VAR_PLACEHOLDER_QUOTE: &str = "\"\u{E000}\"";
 const REG_SEPARATOR: &str = "\u{E001}";
 
 // ============================================================================
-//  STRUCT OTTIMIZZATA
+//  OPTIMIZED STRUCT
 // ============================================================================
 
 #[derive(Clone)]
@@ -60,7 +60,7 @@ impl ColumnBuffer {
 }
 
 // ============================================================================
-//  PARSER MANUALE (SAFE)
+//  MANUAL PARSER (SAFE)
 // ============================================================================
 
 #[derive(Clone, Copy, PartialEq)]
@@ -80,7 +80,7 @@ fn is_aggr_char(b: u8) -> bool {
     (b >= b'0' && b <= b'9') || b == b'_' || b == b'.' || b == b'-' || b == b':'
 }
 
-// [AGGIUNTA] Helper per Binary Guard (Allineamento al Paper)
+// [ADDED] Helper for Binary Guard (Paper Alignment)
 #[inline(always)]
 fn is_likely_binary(data: &[u8]) -> bool {
     let limit = std::cmp::min(data.len(), 4096);
@@ -367,7 +367,7 @@ impl CASTCompressor {
     }
 
     pub fn compress(&mut self, input_data: &[u8]) -> (Vec<u8>, Vec<u8>, Vec<u8>, u8, String) {
-        // [AGGIUNTA] BINARY GUARD CHECK (Allineamento al Paper)
+        // [ADDED] BINARY GUARD CHECK (Paper Alignment)
         if is_likely_binary(input_data) {
             return self.create_passthrough(input_data, "Binary Guard Detected");
         }
@@ -425,7 +425,7 @@ impl CASTCompressor {
             }
         }
 
-        // Logic split/unified (identica)
+        // Logic split/unified (identical)
         let num_templates = self.skeletons_list.len();
         let mut decision_mode = "UNIFIED";
         if num_templates < 256 {
@@ -481,6 +481,9 @@ impl CASTCompressor {
 
         let mut raw_ids = Vec::with_capacity(self.stream_template_ids.len() * 2);
         let mut id_mode_flag;
+
+        // [FIX] Calculate total rows for Single Template Mode logic
+        let total_rows = self.stream_template_ids.len() as u32;
 
         if num_templates == 1 { id_mode_flag = 3; }
         else if num_templates < 256 {
@@ -540,7 +543,22 @@ impl CASTCompressor {
              (c_reg, c_ids, c_vars, id_mode_flag, mode_str.to_string())
         } else {
              let len_reg = raw_registry.len() as u32;
-             let len_ids = raw_ids.len() as u32;
+
+             // [FIX SAFE] HYBRID LOGIC FOR BIT-PERFECT BACKWARDS COMPATIBILITY
+             // If Single Template Mode:
+             // - If vars exist -> Write 0 (Legacy behavior, identical output)
+             // - If NO vars (Bug Case) -> Write total_rows (Fix)
+             let len_ids = if (id_mode_flag & 0x7F) == 3 {
+                 // Check if the single template has variables (columns)
+                 let has_vars = if let Some(cols) = self.columns_storage.get(&self.stream_template_ids[0]) {
+                     !cols.is_empty()
+                 } else { false };
+
+                 if has_vars { 0 } else { total_rows }
+             } else {
+                 raw_ids.len() as u32
+             };
+
              let mut solid = Vec::new();
              solid.extend_from_slice(&len_reg.to_le_bytes());
              solid.extend_from_slice(&len_ids.to_le_bytes());
@@ -585,17 +603,26 @@ impl CASTDecompressor {
         let mut ids_data_bytes = Vec::new();
         let vars_data_bytes;
 
+        let mut num_rows_single_template_header = 0;
+
         if is_unified {
             let full = decompress_with_7z(c_vars);
             if full.len() < 8 { return Vec::new(); }
             let len_reg = u32::from_le_bytes(full[0..4].try_into().unwrap()) as usize;
-            let len_ids = u32::from_le_bytes(full[4..8].try_into().unwrap()) as usize;
+
+            // [FIX] Read the value (can be len_ids OR total_rows)
+            let len_ids_or_rows = u32::from_le_bytes(full[4..8].try_into().unwrap()) as usize;
+
             let mut off = 8;
             reg_data_bytes = full[off..off+len_reg].to_vec();
             off += len_reg;
+
             if id_flag != 3 {
-                ids_data_bytes = full[off..off+len_ids].to_vec();
-                off += len_ids;
+                ids_data_bytes = full[off..off+len_ids_or_rows].to_vec();
+                off += len_ids_or_rows;
+            } else {
+                // [FIX] In Mode 3, this value is the row count. Don't read bytes.
+                num_rows_single_template_header = len_ids_or_rows;
             }
             vars_data_bytes = full[off..].to_vec();
         } else {
@@ -605,7 +632,7 @@ impl CASTDecompressor {
         }
 
         let reg_str = String::from_utf8(reg_data_bytes).expect("Registry UTF-8 Error");
-        // Split su REG_SEPARATOR
+        // Split on REG_SEPARATOR
         let skeletons: Vec<&str> = reg_str.split(REG_SEPARATOR).collect();
 
         let mut template_ids = Vec::with_capacity(ids_data_bytes.len());
@@ -688,10 +715,16 @@ impl CASTDecompressor {
             }
         };
 
+        // [FIX] Logic with Backward Compatibility
         let num_rows_single_template = if id_flag == 3 {
-            if !columns_storage.is_empty() && !columns_storage[0].is_empty() {
-                columns_storage[0][0].len()
-            } else { 0 }
+             // Priority 1: Use the new header value (static files support)
+             let mut n = num_rows_single_template_header;
+
+             // Priority 2: Fallback for Legacy Archives (where header was 0 but vars exist)
+             if n == 0 && !columns_storage.is_empty() && !columns_storage[0].is_empty() {
+                 n = columns_storage[0][0].len();
+             }
+             n
         } else { 0 };
 
         let mut reconstruct = |t_id: usize| {
@@ -720,7 +753,7 @@ impl CASTDecompressor {
         if h.finalize() != expected_crc { eprintln!("\n[!] FAILURE: CRC Mismatch after decompression."); }
 
         let duration = start_time.elapsed();
-        println!("Decompressione (7-Zip) terminata in {:.4} secondi", duration.as_secs_f64());
+        println!("Decompression (7-Zip) finished in {:.4} seconds", duration.as_secs_f64());
 
         final_data
     }
