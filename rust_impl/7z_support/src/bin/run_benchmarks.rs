@@ -22,7 +22,7 @@ struct BenchmarkResult {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    // [FIX] Aggiunto controllo helper iniziale
+    // [FIX] Added initial helper check
     if args.len() < 2 {
         print_bench_usage();
         return;
@@ -278,11 +278,14 @@ fn run_cast_solid(data: &[u8], dict_size: u32, results: &mut Vec<BenchmarkResult
     h.update(data);
     let expected_crc = h.finalize();
     let decompressor = CASTDecompressor;
+
+    // [FIX] Handle Result type
     let check = std::panic::catch_unwind(|| {
         decompressor.decompress(&r, &i, &v, expected_crc, flag)
     });
     match check {
-        Ok(res) => if res == data { println!("[+] OK."); } else { println!("[!] FAIL (Mismatch)."); },
+        Ok(Ok(res)) => if res == data { println!("[+] OK."); } else { println!("[!] FAIL (Mismatch)."); },
+        Ok(Err(e)) => println!("[!] ERROR: {}", e),
         Err(_) => println!("[!] CRASH."),
     }
 }
@@ -328,11 +331,14 @@ fn run_cast_chunked(file_path: &str, chunk_size: usize, file_len: usize, dict_si
         h.update(chunk_data);
         let expected_crc = h.finalize();
         let decompressor = CASTDecompressor;
+
+        // [FIX] Handle Result type
         let check = std::panic::catch_unwind(|| {
             decompressor.decompress(&r, &i, &v, expected_crc, flag)
         });
         match check {
-            Ok(restored) => if restored != chunk_data { verify_ok = false; },
+            Ok(Ok(restored)) => if restored != chunk_data { verify_ok = false; },
+            Ok(Err(_)) => { verify_ok = false; },
             Err(_) => { verify_ok = false; }
         }
     }
@@ -448,7 +454,7 @@ fn format_num_simple(n: usize) -> String {
     result.chars().rev().collect::<String>()
 }
 
-// [AGGIUNTA] La funzione Helper mancante
+// [ADDED] The missing Helper function
 fn print_bench_usage() {
     println!(
         "\nCAST Benchmarking Harness (7-Zip Backend)\n\n\
