@@ -77,6 +77,21 @@ fn is_aggr_char(b: u8) -> bool {
     (b >= b'0' && b <= b'9') || b == b'_' || b == b'.' || b == b'-' || b == b':'
 }
 
+// Helper per Binary Guard (Aggiunto per parità con Paper/Python)
+#[inline(always)]
+fn is_likely_binary(data: &[u8]) -> bool {
+    let limit = std::cmp::min(data.len(), 4096);
+    let sample = &data[..limit];
+    let mut control_count = 0;
+    for &b in sample {
+        // 0..8 (Bin), 9..13 (Space safe), 14..31 (Bin), 127 (DEL safe-ish)
+        if b < 9 || (b > 13 && b < 32) {
+            control_count += 1;
+        }
+    }
+    (control_count as f64 / limit as f64) > 0.01
+}
+
 #[inline(always)]
 fn match_strict_number(bytes: &[u8]) -> usize {
     let len = bytes.len();
@@ -314,6 +329,11 @@ impl CASTCompressor {
     }
 
     pub fn compress(&mut self, input_data: &[u8]) -> (Vec<u8>, Vec<u8>, Vec<u8>, u8, String) {
+        // [FIX] BINARY GUARD (Allineato al Paper)
+        if is_likely_binary(input_data) {
+            return self.create_passthrough(input_data, "Binary Guard Detected");
+        }
+
         let (text_cow, is_latin1) = match std::str::from_utf8(input_data) {
             Ok(s) => (Cow::Borrowed(s), false),
             Err(_) => {

@@ -155,7 +155,7 @@ fn print_usage() {
         Options:\n  \
           --multithread      Enable parallel processing for higher speed\n  \
           --chunk-size <S>   Process file in chunks (e.g., 512MB, 1GB, 50000B)\n  \
-          --dict-size <S>    Set LZMA Dictionary size (Default: 128MB)\n\
+          --dict-size <S>    Set LZMA Dictionary size (Default: 128MB)\n  \
           -v, --verify       (During compression) Run an immediate integrity check\n\n\
         Examples:\n  \
           cargo run --release -- -c data.csv archive.gtf --multithread\n  \
