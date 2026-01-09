@@ -27,11 +27,23 @@ This repository contains the source code and benchmarking tools used to produce 
 
 ## ⚡ Key Features
 
-* 🧠 **Schema-less Inference**: Uses an **Optimized Adaptive Parser** (zero-allocation) to automatically detect repetitive patterns in **any structured text stream**, operating purely on syntax without relying on file extensions or predefined schemas.
+* 🧠 **Schema-less Inference**: Uses an **Optimized Adaptive Parser** to automatically detect repetitive patterns in **any structured text stream**, operating purely on syntax without relying on file extensions or predefined schemas.
 * 📦 **Enhanced Density**: Reduces structural entropy, allowing standard compressors (LZMA2, Zstd, Brotli, etc) to achieve higher compression ratios **on structured texts**.
 * 🚀 **Throughput Efficiency**: For **highly structured inputs**, the reduced entropy of the columnar streams lowers the backend encoding cost, often resulting in a net reduction of total execution time despite the parsing overhead.
 * 🛠️ **Memory Scalability**: Includes configurable **Stream Chunking** and **Dictionary Size** control, allowing high-ratio compression even on systems with limited RAM.
 * 🛡️ **Robustness**: Includes a **Binary Guard** heuristic to automatically detect and passthrough non-structured or binary files, preventing data corruption or inefficiency.
+
+---
+
+## 🔮 Current Scope & Future Direction
+
+### ⚡ Current Focus: Archival & Full Restoration
+CAST is currently designed as a stream transformer for **high-efficiency archival**.
+* **Primary Goal:** Balance maximum compression ratio with speed.
+* **Access Pattern:** **Sequential Access**. The tool is optimized for scenarios where the full file is restored for processing.
+
+### 🔭 Future Roadmap: Random Access
+The internal architecture is already **Block-Based**. Future research aims to **investigate the feasibility** of indexing these blocks to enable **Random Access**. If successful, this would allow querying specific parts of the file without full decompression.
 
 ---
 
@@ -91,7 +103,7 @@ Decompression involves decoding the columnar streams and re-assembling the origi
 
 **Observation:** The reconstruction phase is strictly linear (O(N)). Thanks to the optimized architecture of the Rust engine, the re-serialization overhead is minimized, ensuring high throughput.
 
-![Decompression Benchmarks](paper/decompression_benchmarks.PNG)
+![Decompression Benchmarks](paper/decompression_benchmarks.png)
 
 > *(See `paper/CAST_Paper.pdf` for high-resolution data)*
 

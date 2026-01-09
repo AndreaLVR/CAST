@@ -22,7 +22,6 @@ struct BenchmarkResult {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    // [FIX] Aggiunto controllo helper iniziale
     if args.len() < 2 {
         print_bench_usage();
         return;
@@ -164,7 +163,7 @@ fn main() {
         let mut results = Vec::new();
 
         // ---------------------------------------------------------
-        // FASE 1: CAST (Passiamo dict_size_bytes)
+        // 1: CAST
         // ---------------------------------------------------------
         if let Some(chunk_size) = chunk_size_bytes {
             run_cast_chunked_only(&file_path, chunk_size, file_len, use_multithread, dict_size_bytes, &mut results);
@@ -177,7 +176,7 @@ fn main() {
         }
 
         // ---------------------------------------------------------
-        // FASE 2: COMPETITORS (Passiamo dict_size_bytes per LZMA)
+        // 2: COMPETITORS
         // ---------------------------------------------------------
         if !competitors.is_empty() {
             let full_data = match std::fs::read(&file_path) {
@@ -257,7 +256,6 @@ fn run_cast_solid_only(data: &[u8], multithread: bool, dict_size: u32, results: 
     io::stdout().flush().unwrap();
 
     let start = Instant::now();
-    // CHANGED: Pass dict_size
     let mut compressor = CASTCompressor::new(multithread, dict_size);
     let (r, i, v, flag, _) = compressor.compress(data);
     let duration = start.elapsed().as_secs_f64();
@@ -273,12 +271,15 @@ fn run_cast_solid_only(data: &[u8], multithread: bool, dict_size: u32, results: 
     h.update(data);
     let expected_crc = h.finalize();
     let decompressor = CASTDecompressor;
+
+    // [FIX] Handling Result type from decompress
     let check = std::panic::catch_unwind(|| {
         decompressor.decompress(&r, &i, &v, expected_crc, flag)
     });
 
     match check {
-        Ok(res) => if res == data { println!("OK]"); } else { println!("FAIL - Mismatch]"); },
+        Ok(Ok(res)) => if res == data { println!("OK]"); } else { println!("FAIL - Mismatch]"); },
+        Ok(Err(e)) => println!("ERROR: {}]", e),
         Err(_) => println!("CRASH]"),
     }
 }
@@ -310,7 +311,6 @@ fn run_cast_chunked_only(file_path: &str, chunk_size: usize, file_len: usize, mu
 
         // Compress
         let start = Instant::now();
-        // CHANGED: Pass dict_size
         let mut compressor = CASTCompressor::new(multithread, dict_size);
         let (r, i, v, flag, _) = compressor.compress(chunk_data);
         total_time += start.elapsed().as_secs_f64();
@@ -324,11 +324,14 @@ fn run_cast_chunked_only(file_path: &str, chunk_size: usize, file_len: usize, mu
         h.update(chunk_data);
         let expected_crc = h.finalize();
         let decompressor = CASTDecompressor;
+
+        // [FIX] Handling Result type
         let check = std::panic::catch_unwind(|| {
             decompressor.decompress(&r, &i, &v, expected_crc, flag)
         });
         match check {
-            Ok(restored) => if restored != chunk_data { verify_ok = false; },
+            Ok(Ok(restored)) => if restored != chunk_data { verify_ok = false; },
+            Ok(Err(_)) => { verify_ok = false; },
             Err(_) => { verify_ok = false; }
         }
     }
@@ -350,7 +353,6 @@ fn run_competitor_solid(algo: &str, data: &[u8], multithread: bool, dict_size: u
             print!("\n[*] Running {} (XZ - Global)...", name);
             io::stdout().flush().unwrap();
             let start = Instant::now();
-            // CHANGED: Pass dict_size (This maintains Parity!)
             let c = compress_buffer_native(data, multithread, dict_size);
             let duration = start.elapsed().as_secs_f64();
             let size = c.len();
@@ -447,7 +449,6 @@ fn format_num_simple(n: usize) -> String {
     result.chars().rev().collect::<String>()
 }
 
-// [AGGIUNTA] Funzione Helper per l'Usage
 fn print_bench_usage() {
     println!(
         "\nCAST Benchmarking Harness (Native Backend)\n\n\

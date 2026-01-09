@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::borrow::Cow;
 use std::cmp;
 use std::io::{Read, Write};
-// NOTA: Regex rimossa per massime prestazioni
 use crc32fast::Hasher;
 use xz2::read::XzDecoder;
 use xz2::write::XzEncoder;
@@ -12,15 +11,12 @@ use xz2::stream::{Stream, MtStreamBuilder, Check, LzmaOptions, Filters};
 //  CONSTANTS & CONFIG
 // ============================================================================
 
-// Placeholder sicuri (Private Use Area)
+// Safe Placeholders (Private Use Area)
 const VAR_PLACEHOLDER: char = '\u{E000}';
 const VAR_PLACEHOLDER_STR: &str = "\u{E000}";
 const VAR_PLACEHOLDER_QUOTE: &str = "\"\u{E000}\"";
 const REG_SEPARATOR: &str = "\u{E001}";
 
-// ============================================================================
-//  STRUCT OTTIMIZZATA
-// ============================================================================
 
 #[derive(Clone)]
 struct ColumnBuffer {
@@ -56,9 +52,6 @@ impl ColumnBuffer {
     }
 }
 
-// ============================================================================
-//  PARSER MANUALE (SAFE)
-// ============================================================================
 
 #[derive(Clone, Copy, PartialEq)]
 enum ParsingMode { Strict, Aggressive }
@@ -77,7 +70,7 @@ fn is_aggr_char(b: u8) -> bool {
     (b >= b'0' && b <= b'9') || b == b'_' || b == b'.' || b == b'-' || b == b':'
 }
 
-// Helper per Binary Guard (Aggiunto per parità con Paper/Python)
+// Helper per Binary Guard
 #[inline(always)]
 fn is_likely_binary(data: &[u8]) -> bool {
     let limit = std::cmp::min(data.len(), 4096);
@@ -288,11 +281,10 @@ pub struct CASTCompressor {
     next_template_id: u32,
     mode: ParsingMode,
     multithread: bool,
-    dict_size: u32, // CHANGED: Added field to store dictionary size
+    dict_size: u32,
 }
 
 impl CASTCompressor {
-    // CHANGED: new() now accepts dict_size
     pub fn new(multithread: bool, dict_size: u32) -> Self {
         CASTCompressor {
             template_map: HashMap::new(),
@@ -329,7 +321,7 @@ impl CASTCompressor {
     }
 
     pub fn compress(&mut self, input_data: &[u8]) -> (Vec<u8>, Vec<u8>, Vec<u8>, u8, String) {
-        // [FIX] BINARY GUARD (Allineato al Paper)
+        // [FIX] BINARY GUARD
         if is_likely_binary(input_data) {
             return self.create_passthrough(input_data, "Binary Guard Detected");
         }
@@ -461,6 +453,8 @@ impl CASTCompressor {
         let mut raw_ids = Vec::new();
         let mut id_mode_flag;
 
+        let total_rows = self.stream_template_ids.len() as u32;
+
         if num_templates == 1 { id_mode_flag = 3; }
         else if num_templates < 256 {
             id_mode_flag = 2;
@@ -511,8 +505,7 @@ impl CASTCompressor {
             ParsingMode::Aggressive => "Aggressive"
         };
 
-        // 7. Compressione Finale (Native)
-        // CHANGED: Pass self.dict_size to calls
+        // 7. Final compression (Native)
         if decision_mode == "SPLIT" {
             let c_reg = compress_buffer_native(&raw_registry, self.multithread, self.dict_size);
             let c_ids = compress_buffer_native(&raw_ids, self.multithread, self.dict_size);
@@ -520,7 +513,18 @@ impl CASTCompressor {
             (c_reg, c_ids, c_vars, id_mode_flag, mode_str.to_string())
         } else {
             let len_reg = raw_registry.len() as u32;
-            let len_ids = raw_ids.len() as u32;
+
+            // [FIX SAFE] HYBRID LOGIC FOR BIT-PERFECT BACKWARDS COMPATIBILITY
+            let len_ids = if (id_mode_flag & 0x7F) == 3 {
+                 let has_vars = if let Some(cols) = self.columns_storage.get(&self.stream_template_ids[0]) {
+                     !cols.is_empty()
+                 } else { false };
+
+                 if has_vars { 0 } else { total_rows }
+            } else {
+                raw_ids.len() as u32
+            };
+
             let mut solid = Vec::new();
             solid.extend_from_slice(&len_reg.to_le_bytes());
             solid.extend_from_slice(&len_ids.to_le_bytes());
@@ -534,7 +538,6 @@ impl CASTCompressor {
 
     fn create_passthrough(&self, data: &[u8], reason: &str) -> (Vec<u8>, Vec<u8>, Vec<u8>, u8, String) {
         println!("[!] Switching to Passthrough ({})", reason);
-        // CHANGED: Pass self.dict_size
         let c_vars = compress_buffer_native(data, self.multithread, self.dict_size);
         (Vec::new(), Vec::new(), c_vars, 255, reason.to_string())
     }
@@ -546,8 +549,11 @@ impl CASTCompressor {
 
 pub struct CASTDecompressor;
 impl CASTDecompressor {
-    pub fn decompress(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag_raw: u8) -> Vec<u8> {
-        if id_flag_raw == 255 { return decompress_buffer_native(c_vars); }
+    pub fn decompress(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag_raw: u8) -> Result<Vec<u8>, String> {
+        if id_flag_raw == 255 {
+            let data = decompress_buffer_native(c_vars);
+            return Ok(data);
+        }
 
         let is_latin1 = (id_flag_raw & 0x80) != 0;
         let id_flag = id_flag_raw & 0x7F;
@@ -557,17 +563,28 @@ impl CASTDecompressor {
         let mut ids_data_bytes = Vec::new();
         let vars_data_bytes;
 
+        let mut num_rows_single_template_header = 0;
+
         if is_unified {
             let full = decompress_buffer_native(c_vars);
-            if full.len() < 8 { panic!("Corrupted Archive (Header)"); }
+            if full.len() < 8 { return Err("Corrupted Archive (Header)".to_string()); }
             let len_reg = u32::from_le_bytes(full[0..4].try_into().unwrap()) as usize;
-            let len_ids = u32::from_le_bytes(full[4..8].try_into().unwrap()) as usize;
+
+            // This reads either ID length OR Row Count (depending on mode/content)
+            let len_ids_or_rows = u32::from_le_bytes(full[4..8].try_into().unwrap()) as usize;
+
             let mut off = 8;
+            if off + len_reg > full.len() { return Err("Corrupted Archive (Registry Length)".to_string()); }
             reg_data_bytes = full[off..off+len_reg].to_vec();
             off += len_reg;
+
             if id_flag != 3 {
-                ids_data_bytes = full[off..off+len_ids].to_vec();
-                off += len_ids;
+                if off + len_ids_or_rows > full.len() { return Err("Corrupted Archive (IDs Length)".to_string()); }
+                ids_data_bytes = full[off..off+len_ids_or_rows].to_vec();
+                off += len_ids_or_rows;
+            } else {
+                // If mode 3, store it potentially as row count
+                num_rows_single_template_header = len_ids_or_rows;
             }
             vars_data_bytes = full[off..].to_vec();
         } else {
@@ -576,8 +593,8 @@ impl CASTDecompressor {
             vars_data_bytes = decompress_buffer_native(c_vars);
         }
 
-        let reg_str = String::from_utf8(reg_data_bytes).expect("Registry corrupted (not UTF-8)");
-        // Split sicuro
+        let reg_str = String::from_utf8(reg_data_bytes).map_err(|_| "Registry corrupted (not UTF-8)".to_string())?;
+        // Safe split
         let skeletons: Vec<&str> = reg_str.split(REG_SEPARATOR).collect();
 
         let mut template_ids = Vec::new();
@@ -659,14 +676,22 @@ impl CASTDecompressor {
             }
         };
 
-        // Borrow check fix logic
+        // [FIX SAFE] Hybrid Logic
         let num_rows_single_template = if id_flag == 3 {
-             if !columns_storage.is_empty() && !columns_storage[0].is_empty() {
-                 columns_storage[0][0].len()
-             } else { 0 }
+             // 1. Try Header (Fix for static files)
+             let mut n = num_rows_single_template_header;
+
+             // 2. Fallback (Legacy/Bit-Perfect Benchmark Case)
+             if n == 0 && !columns_storage.is_empty() && !columns_storage[0].is_empty() {
+                 n = columns_storage[0][0].len();
+             }
+             n
         } else { 0 };
 
         let mut reconstruct = |t_id: usize| {
+             // Safe check index
+             if t_id >= skel_parts_cache.len() { return; }
+
              let parts = &skel_parts_cache[t_id];
              let queues = &mut columns_storage[t_id];
              for (idx, part) in parts.iter().enumerate() {
@@ -691,6 +716,6 @@ impl CASTDecompressor {
         h.update(&final_data);
         let crc = h.finalize();
         if crc != expected_crc { eprintln!("CRC Check Failed. Expected: {}, Got: {}", expected_crc, crc); }
-        final_data
+        Ok(final_data)
     }
 }

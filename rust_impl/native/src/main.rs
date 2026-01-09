@@ -235,7 +235,7 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, chunk_byt
     println!("       Time:           {:.2}s", start_total.elapsed().as_secs_f64());
 }
 
-// --- DECOMPRESSION (INVARIATO) ---
+// --- DECOMPRESSION ---
 
 fn do_decompress(input_path: &str, output_path: &str) {
     let start = Instant::now();
@@ -284,8 +284,14 @@ fn do_decompress(input_path: &str, output_path: &str) {
         let chunk_ids = &body_buffer[l_reg .. l_reg+l_ids];
         let chunk_vars = &body_buffer[l_reg+l_ids .. l_reg+l_ids+l_vars];
 
-        let restored = decompressor.decompress(chunk_reg, chunk_ids, chunk_vars, expected_crc, id_flag);
-        f_out.write_all(&restored).unwrap();
+        // CHECK RESULT FROM DECOMPRESS
+        match decompressor.decompress(chunk_reg, chunk_ids, chunk_vars, expected_crc, id_flag) {
+            Ok(restored) => f_out.write_all(&restored).unwrap(),
+            Err(e) => {
+                eprintln!("\n[!]    CRASH: Decompression error at Chunk {}: {}", chunk_idx, e);
+                std::process::exit(1);
+            }
+        }
     }
 
     if chunk_idx > 0 {
@@ -293,7 +299,7 @@ fn do_decompress(input_path: &str, output_path: &str) {
     }
 }
 
-// --- VERIFICATION (INVARIATO) ---
+// --- VERIFICATION ---
 
 fn do_verify_standalone(input_path: &str) {
     let start = Instant::now();
@@ -330,22 +336,18 @@ fn do_verify_standalone(input_path: &str) {
         let chunk_ids = &body_buffer[l_reg .. l_reg+l_ids];
         let chunk_vars = &body_buffer[l_reg+l_ids .. l_reg+l_ids+l_vars];
 
-        let res = std::panic::catch_unwind(|| {
-            let restored = decompressor.decompress(chunk_reg, chunk_ids, chunk_vars, expected_crc, id_flag);
-            let mut h = Hasher::new();
-            h.update(&restored);
-            h.finalize() == expected_crc
-        });
-
-        match res {
-            Ok(valid) => {
-                if !valid {
+        // CHECK RESULT
+        match decompressor.decompress(chunk_reg, chunk_ids, chunk_vars, expected_crc, id_flag) {
+            Ok(restored) => {
+                let mut h = Hasher::new();
+                h.update(&restored);
+                if h.finalize() != expected_crc {
                     println!("\n[!]    FAILURE: CRC Mismatch at Chunk {}!", chunk_idx);
                     std::process::exit(1);
                 }
             },
-            Err(_) => {
-                println!("\n[!]    CRASH: Decompression error at Chunk {}!", chunk_idx);
+            Err(e) => {
+                println!("\n[!]    CRASH: Decompression error at Chunk {}: {}", chunk_idx, e);
                 std::process::exit(1);
             }
         }

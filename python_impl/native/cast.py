@@ -196,6 +196,9 @@ class CASTCompressor:
         # --- 4. SERIALIZATION (ALWAYS ESCAPED) ---
         raw_registry = self.REG_SEP.join(self.skeletons_list).encode("utf-8")
 
+        # [FIX] Calculate total rows for Hybrid Logic
+        total_rows = len(self.stream_template_ids)
+
         if num_templates == 1:
             raw_ids = b""
             id_mode_flag = 3
@@ -253,8 +256,6 @@ class CASTCompressor:
 
         # --- 5. COMPRESSION ---
         if decision_mode == "SPLIT":
-            # CHANGED: If dict_size is provided, we MUST use filters.
-            # If not (None), we use preset=9 to guarantee EXACT same behavior as before.
             if dict_size is not None:
                 custom_filters = [{
                     "id": lzma.FILTER_LZMA2,
@@ -265,7 +266,6 @@ class CASTCompressor:
                 c_ids = lzma.compress(raw_ids, check=lzma.CHECK_CRC32, filters=custom_filters)
                 c_vars = lzma.compress(vars_buffer, check=lzma.CHECK_CRC32, filters=custom_filters)
             else:
-                # LEGACY PATH (Identical to previous code)
                 c_reg = lzma.compress(raw_registry, preset=9)
                 c_ids = lzma.compress(raw_ids, preset=9)
                 c_vars = lzma.compress(vars_buffer, preset=9 | lzma.PRESET_EXTREME)
@@ -273,18 +273,32 @@ class CASTCompressor:
             return c_reg, c_ids, c_vars, id_mode_flag, self.mode_name
         else:
             len_reg = len(raw_registry)
-            len_ids = len(raw_ids)
+
+            # [FIX] Hybrid Logic for Bit-Perfect Benchmark Compatibility
+            len_ids = 0
+            if (id_mode_flag & 0x7F) == 3:
+                # Check if vars exist for the single template (ID 0)
+                # columns_storage is dict: { t_id: [ [col1], [col2] ] }
+                cols = self.columns_storage.get(0, [])
+                has_vars = len(cols) > 0
+
+                if has_vars:
+                    len_ids = 0  # Legacy behavior (Benchmark Safe)
+                else:
+                    len_ids = total_rows  # New behavior (Fix for empty vars)
+            else:
+                len_ids = len(raw_ids)
+
             internal_header = struct.pack("<II", len_reg, len_ids)
             solid_block = internal_header + raw_registry + raw_ids + vars_buffer
 
-            # Determine dict size (Use passed value OR fallback to standard 128MB)
             final_dict_size = dict_size if dict_size is not None else 128 * 1024 * 1024
 
             filters_unified = [
                 {
                     "id": lzma.FILTER_LZMA2,
                     "preset": 9 | lzma.PRESET_EXTREME,
-                    "dict_size": final_dict_size,  # CHANGED: Dynamic
+                    "dict_size": final_dict_size,
                 }
             ]
             c_solid = lzma.compress(
@@ -347,18 +361,22 @@ class CASTDecompressor:
         ROW_SEP_BYTE = 0x00
 
         # --- 2. DECOMPRESSION & PARSING ---
+        num_rows_header = 0
+
         if is_unified:
             full_payload = lzma.decompress(c_vars)
-            len_reg, len_ids = struct.unpack("<II", full_payload[:8])
+            len_reg, len_ids_or_rows = struct.unpack("<II", full_payload[:8])
             offset = 8
             reg_data_bytes = full_payload[offset: offset + len_reg]
             offset += len_reg
 
             if real_id_flag == 3:
                 ids_data_bytes = b""
+                # [FIX] Capture row count if present
+                num_rows_header = len_ids_or_rows
             else:
-                ids_data_bytes = full_payload[offset: offset + len_ids]
-                offset += len_ids
+                ids_data_bytes = full_payload[offset: offset + len_ids_or_rows]
+                offset += len_ids_or_rows
             vars_data_bytes = full_payload[offset:]
 
             reg_data = reg_data_bytes.decode("utf-8")
@@ -379,9 +397,6 @@ class CASTDecompressor:
             vars_data_bytes = lzma.decompress(c_vars)
 
         # --- 3. COLUMN PARSING (MANUAL BYTE SCAN) ---
-        # Python's split() is not enough for byte stuffing logic, need careful scan
-
-        # 3.1 Find Columns
         raw_columns_offsets = []
         start = 0
         i = 0
@@ -411,7 +426,6 @@ class CASTDecompressor:
 
         # 3.2 Extract Rows
         for t_id, skel in enumerate(skeletons):
-            # Conta occorrenze del placeholder
             num_vars = skel.count(self.VAR_PLACEHOLDER)
             columns_storage[t_id] = []
 
@@ -428,7 +442,6 @@ class CASTDecompressor:
                         if val == 0x01:  # Escape
                             curr += 2
                         elif val == ROW_SEP_BYTE:
-                            # Extract & Unescape
                             chunk = vars_data_bytes[cell_start:curr]
                             chunk = chunk.replace(SEQ_COL, B_COL)
                             chunk = chunk.replace(SEQ_ROW, B_ROW)
@@ -440,7 +453,6 @@ class CASTDecompressor:
                         else:
                             curr += 1
 
-                    # Last cell
                     chunk = vars_data_bytes[cell_start:curr]
                     chunk = chunk.replace(SEQ_COL, B_COL)
                     chunk = chunk.replace(SEQ_ROW, B_ROW)
@@ -459,17 +471,34 @@ class CASTDecompressor:
         if real_id_flag == 3:
             parts = skeleton_parts_cache[0]
             queues = columns_storage[0]
-            # Assumiamo che tutte le colonne abbiano la stessa lunghezza
-            if queues:
-                for vars_tuple in zip(*queues):
-                    row_components = [b""] * (len(parts) + len(vars_tuple))
+
+            # [FIX] Hybrid Reconstruction
+            # Case A: Header > 0 (Fixed Static Files) -> Use explicit loop
+            if num_rows_header > 0:
+                for _ in range(num_rows_header):
+                    row_components = [b""] * (len(parts) + len(queues))
                     row_components[::2] = parts
-                    row_components[1::2] = vars_tuple
+
+                    if queues:
+                        # Extract next variable for each column
+                        for i, q in enumerate(queues):
+                            try:
+                                row_components[2 * i + 1] = next(q)
+                            except StopIteration:
+                                pass
                     buf_append(b"".join(row_components))
+
+            # Case B: Legacy (Benchmark) / Fallback -> Use zip
             else:
-                # No vars case (solo testo statico ripetuto)
-                # Questo caso è raro in CAST ma possibile (log di sole righe fisse)
-                pass  # TODO: Gestire righe fisse senza variabili se necessario
+                if queues:
+                    for vars_tuple in zip(*queues):
+                        row_components = [b""] * (len(parts) + len(vars_tuple))
+                        row_components[::2] = parts
+                        row_components[1::2] = vars_tuple
+                        buf_append(b"".join(row_components))
+                else:
+                    # Rare fallback: No header, no queues. Nothing to reconstruct.
+                    pass
 
         else:
             for t_id in template_ids:
