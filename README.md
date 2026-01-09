@@ -27,7 +27,7 @@ This repository contains the source code and benchmarking tools used to produce 
 
 ## ⚡ Key Features
 
-* 🧠 **Schema-less Inference**: Uses an **Optimized Adaptive Parser** (zero-allocation) to automatically detect repetitive patterns in **any structured text stream**, operating purely on syntax without relying on file extensions or predefined schemas.
+* 🧠 **Schema-less Inference**: Uses an **Optimized Adaptive Parser** to automatically detect repetitive patterns in **any structured text stream**, operating purely on syntax without relying on file extensions or predefined schemas.
 * 📦 **Enhanced Density**: Reduces structural entropy, allowing standard compressors (LZMA2, Zstd, Brotli, etc) to achieve higher compression ratios **on structured texts**.
 * 🚀 **Throughput Efficiency**: For **highly structured inputs**, the reduced entropy of the columnar streams lowers the backend encoding cost, often resulting in a net reduction of total execution time despite the parsing overhead.
 * 🛠️ **Memory Scalability**: Includes configurable **Stream Chunking** and **Dictionary Size** control, allowing high-ratio compression even on systems with limited RAM.
