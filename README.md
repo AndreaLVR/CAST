@@ -133,10 +133,11 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
 
 ### 1. 🦀 Rust Implementation (The Benchmark Engine)
 * **Goal:** **High-Performance, Density & Scalability.**
-* **Method:** A performance-oriented **research prototype** featuring **Zero-Copy Parsing**, **Multithreading**, and **Stream Chunking** to handle gigabyte-sized files with constant memory footprint.
+* **Method:** A performance-oriented **research prototype** featuring a **Zero-Copy Parsing Strategy**, **Multithreading**, and **Stream Chunking** to handle gigabyte-sized files with constant memory footprint.
 * **Modes:**
     * **Native Mode:** Standalone implementation. Used to validate the **Algorithmic Efficiency (Maximum Density)** presented in Table 1.
-    * **System Mode (7-Zip):** Invokes the external `7-Zip` CLI. Used to validate **Production Throughput** presented in Table 2.
+    * **System Mode (7-Zip):** Invokes the external `7-Zip` CLI. Used to validate **Production Throughput**.
+      > **💡 Recommendation:** This is the **preferred variant** for general usage. It achieves drastic speedups with **negligible compression loss** compared to the Native version.
 * **Pros:**
     * **Speed:** significantly faster on complex datasets, leveraging Rust's zero-cost abstractions.
     * **Scalability:** The `--chunk-size` and `--dict-size` features guarantee a constant and configurable memory footprint, preventing OS swapping.
