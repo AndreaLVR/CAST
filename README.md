@@ -35,6 +35,18 @@ This repository contains the source code and benchmarking tools used to produce 
 
 ---
 
+## 🔮 Current Scope & Future Direction
+
+### ⚡ Current Focus: Archival & Full Restoration
+CAST is currently designed as a stream transformer for **high-efficiency archival**.
+* **Primary Goal:** Balance maximum compression ratio with speed.
+* **Access Pattern:** **Sequential Access**. The tool is optimized for scenarios where the full file is restored for processing.
+
+### 🔭 Future Roadmap: Random Access
+The internal architecture is already **Block-Based**. Future research aims to **investigate the feasibility** of indexing these blocks to enable **Random Access**. If successful, this would allow querying specific parts of the file without full decompression.
+
+---
+
 ## 📊 Benchmarks & Performance Evaluation
 
 > **ℹ️ Note on Backend:** While the CAST algorithm is fundamentally backend-agnostic (compatible with LZMA, Zstd, Brotli, etc.), the implementations provided in this repository are specifically tuned to leverage **LZMA2** as the reference backend to demonstrate maximum compression density (using a **default 128 MB dictionary**).
