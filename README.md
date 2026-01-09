@@ -1,6 +1,7 @@
 # CAST: Columnar Agnostic Structural Transformation
 
-> **A research proof-of-concept for schema-less structural pre-processing. CAST reduces structural entropy in structured and semi-structured text (e.g., Logs, JSON, CSV), enabling general-purpose compressors to achieve superior compression ratios and throughput.**
+> **A research proof-of-concept for schema-less structural pre-processing.**
+> CAST reduces structural entropy by **reorganizing data layout**, enabling general-purpose compressors to achieve higher compression ratios and superior throughput on **structured and semi-structured text (e.g., CSV, Logs, JSON, etc)**.
 
 ![Status](https://img.shields.io/badge/Status-Research_Proof_of_Concept-orange)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?logo=python&logoColor=white)
