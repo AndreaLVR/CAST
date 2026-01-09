@@ -103,7 +103,7 @@ Decompression involves decoding the columnar streams and re-assembling the origi
 
 **Observation:** The reconstruction phase is strictly linear (O(N)). Thanks to the optimized architecture of the Rust engine, the re-serialization overhead is minimized, ensuring high throughput.
 
-![Decompression Benchmarks](paper/decompression_benchmarks.PNG)
+![Decompression Benchmarks](paper/decompression_benchmarks.png)
 
 > *(See `paper/CAST_Paper.pdf` for high-resolution data)*
 
