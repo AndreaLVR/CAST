@@ -217,14 +217,38 @@ fn parse_line_manual<'a>(line: &'a str, mode: ParsingMode, buffer_vars: &mut Vec
 // ============================================================================
 
 fn get_7z_cmd() -> String {
-    if let Ok(path) = env::var("SEVEN_ZIP_PATH") { return path; }
+    if let Ok(path) = env::var("SEVEN_ZIP_PATH") {
+        return path.trim_matches('"').to_string();
+    }
+
+    // 2. Windows
     if cfg!(target_os = "windows") {
         let standard = r"C:\Program Files\7-Zip\7z.exe";
-        if std::path::Path::new(standard).exists() { return standard.to_string(); }
-        "7z.exe".to_string()
-    } else {
-        "7z".to_string()
+        if Path::new(standard).exists() {
+            return standard.to_string();
+        }
+        return "7z.exe".to_string();
     }
+
+    // 3. macOS
+    if cfg!(target_os = "macos") {
+        let common_paths = [
+            "/opt/homebrew/bin/7zz", // Apple Silicon standard
+            "/usr/local/bin/7zz",    // Intel standard
+            "/usr/local/bin/7z",     // Legacy p7zip
+        ];
+
+        for path in common_paths {
+            if Path::new(path).exists() {
+                return path.to_string();
+            }
+        }
+
+        return "7zz".to_string();
+    }
+
+    // 4. Fallback for Linux / Unix
+    "7z".to_string()
 }
 
 // CHANGED: Added `dict_size` parameter
