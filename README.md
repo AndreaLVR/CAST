@@ -4,8 +4,8 @@
 
 
 ![Status](https://img.shields.io/badge/Status-Research_Proof_of_Concept-orange)
-![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?logo=python&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg?logo=rust&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![Paper](https://img.shields.io/badge/Paper-Available_PDF-b31b1b)
 
