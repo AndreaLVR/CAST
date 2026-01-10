@@ -12,6 +12,19 @@ use crate::cast::{CASTCompressor, CASTDecompressor};
 fn main() {
     let args: Vec<String> = env::args().collect();
 
+    // --- 1. DYNAMIC EXECUTABLE NAME EXTRACTION ---
+    let exe_path = Path::new(&args[0]);
+    let exe_name = exe_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("cast");
+
+    // --- 2. HELP FLAG CHECK (Priorità massima) ---
+    if args.iter().any(|arg| arg == "-h" || arg == "--help") {
+        print_usage(exe_name);
+        return;
+    }
+
     // --- ARGUMENT PARSING ---
     let verify_flag = args.iter().any(|arg| arg == "-v" || arg == "--verify");
 
@@ -27,7 +40,7 @@ fn main() {
         }
     }
 
-    // CHANGED: Dict Size parsing (Default: 128 MB)
+    // Dict Size parsing (Default: 128 MB)
     let mut dict_size_bytes: u32 = 128 * 1024 * 1024;
     if let Some(pos) = args.iter().position(|arg| arg == "--dict-size") {
         if pos + 1 < args.len() {
@@ -41,16 +54,17 @@ fn main() {
         }
     }
 
-    // Filter arguments
+    // Filter arguments: Rimuove flag opzionali e help per lasciare solo mode e file
     let clean_args: Vec<String> = args.iter()
         .filter(|arg| *arg != "-v" && *arg != "--verify"
                       && *arg != "--chunk-size" && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--chunk-size").map(|p| p+1)
-                      && *arg != "--dict-size" && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--dict-size").map(|p| p+1))
+                      && *arg != "--dict-size" && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--dict-size").map(|p| p+1)
+                      && *arg != "-h" && *arg != "--help") // <-- Aggiunto filtro per help
         .cloned()
         .collect();
 
     if clean_args.len() < 2 {
-        print_usage();
+        print_usage(exe_name);
         return;
     }
 
@@ -62,6 +76,7 @@ fn main() {
         "-c" => {
             if clean_args.len() < 4 {
                 eprintln!("[!] Missing output path.");
+                print_usage(exe_name);
                 return;
             }
             let input = &clean_args[2];
@@ -77,10 +92,8 @@ fn main() {
             println!("      Output:      {}", output);
             println!("      Dict Size:   {}", format_bytes(dict_size_bytes as usize));
 
-            // 1. Perform compression (Passing dict_size)
             do_compress(input, output, chunk_size_bytes, dict_size_bytes);
 
-            // 2. Optional verification
             if verify_flag {
                 println!("\n------------------------------------------------");
                 println!("[*] Starting Post-Compression Verification...");
@@ -91,11 +104,13 @@ fn main() {
         "-d" => {
             if clean_args.len() < 4 {
                 eprintln!("[!] Missing output path.");
+                print_usage(exe_name);
                 return;
             }
             do_decompress(&clean_args[2], &clean_args[3]);
         },
         _ => {
+            // Auto-detect: se il file esiste e non c'è comando, assume verifica/info
             if verify_flag || Path::new(mode_or_file).exists() {
                 let input_file = mode_or_file;
                 if !Path::new(input_file).exists() {
@@ -104,7 +119,8 @@ fn main() {
                 }
                 do_verify_standalone(input_file);
             } else {
-                print_usage();
+                eprintln!("[!] Unknown command or file not found: {}", mode_or_file);
+                print_usage(exe_name);
             }
         }
     }
@@ -136,11 +152,11 @@ fn format_bytes(n: usize) -> String {
     format!("{} bytes", result.chars().rev().collect::<String>())
 }
 
-fn print_usage() {
+fn print_usage(exe_name: &str) {
     println!(
         "\nCAST (Columnar Agnostic Structural Transformation) CLI Tool\n\n\
         Usage:\n  \
-          cast [MODE] [INPUT] [OUTPUT] [OPTIONS]\n\n\
+          {} [MODE] [INPUT] [OUTPUT] [OPTIONS]\n\n\
         Modes:\n  \
           -c <in> <out>      Compress input file to CAST format\n  \
           -d <in> <out>      Decompress CAST file to original format\n  \
@@ -148,11 +164,13 @@ fn print_usage() {
         Options:\n  \
           --chunk-size <S>   Process file in chunks (e.g., 512MB, 1GB, 50000B)\n  \
           --dict-size <S>    Set 7-Zip LZMA Dictionary size (Default: 128MB)\n  \
-          -v, --verify       (During compression) Run an immediate integrity check\n\n\
+          -v, --verify       (During compression) Run an immediate integrity check\n  \
+          -h, --help         Show this help message\n\n\
         Examples:\n  \
-          cast -c data.csv archive.gtf\n  \
-          cast -c large_log.txt archive.gtf --chunk-size 256MB --dict-size 256MB\n  \
-          cast -v archive.gtf"
+          {} -c data.csv archive.gtf\n  \
+          {} -c large_log.txt archive.gtf --chunk-size 256MB --dict-size 256MB\n  \
+          {} -v archive.gtf",
+        exe_name, exe_name, exe_name, exe_name
     );
 }
 
