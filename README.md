@@ -18,7 +18,7 @@
 
 ## 🔬 Overview
 
-**CAST** is a structural pre-processor designed to evaluate the impact of **columnar reorganization** on general-purpose compression pipelines (such as LZMA2, Zstd, and Brotli).
+**CAST** is a structural pre-processor designed to demonstrate the potential of columnar reorganization on general-purpose compression pipelines (such as LZMA2, Zstd, and Brotli).
 
 Standard stream compressors rely on finite "look-back" windows (dictionaries), which limits their ability to detect redundancy in verbose, row-oriented formats like CSV, Logs, or JSON. CAST parses the input structure globally, separating the syntax (**Skeleton**) from the values (**Variables**), and reorganizes the data into contiguous columnar streams before passing them to the backend compressor.
 
