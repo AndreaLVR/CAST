@@ -5,7 +5,7 @@ authors:
   given-names: "Andrea"
 title: "CAST: Columnar Agnostic Structural Transformation"
 version: 0.1.0
-date-released: 2025-12-24
+date-released: 2026-01-11
 url: "https://github.com/AndreaLVR/CAST"
 abstract: "A Schema-less Structural Preprocessing Algorithm for Improving General-Purpose Compression on Arbitrary Structured and Semi-structured text streams."
 preferred-citation:
@@ -14,4 +14,4 @@ preferred-citation:
   - family-names: "Olivari"
     given-names: "Andrea"
   title: "CAST: A Schema-less Structural Preprocessing Algorithm for Improving General-Purpose Compression on Arbitrary Structured and Semi-structured text streams."
-  year: 2025
+  year: 2026
