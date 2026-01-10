@@ -5,11 +5,26 @@ use std::path::Path;
 use std::time::Instant;
 use crc32fast::Hasher;
 
+// Assuming the module structure is correct based on your project
 use cast::cast::{CASTCompressor, CASTDecompressor};
-
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+
+    // --- 1. DYNAMIC EXECUTABLE NAME EXTRACTION ---
+    // Retrieve the real filename (e.g. "cast-native-win-v0.1.0.exe")
+    let exe_path = Path::new(&args[0]);
+    let exe_name = exe_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("cast");
+
+    // --- 2. HELP FLAG CHECK ---
+    // If -h or --help is present, print usage and exit immediately
+    if args.iter().any(|arg| arg == "-h" || arg == "--help") {
+        print_usage(exe_name);
+        return;
+    }
 
     // --- ARGUMENT PARSING ---
     let use_multithread = args.iter().any(|arg| arg == "--multithread");
@@ -28,7 +43,7 @@ fn main() {
         }
     }
 
-    // CHANGED: Dict Size parsing
+    // Dict Size parsing
     let mut dict_size_bytes: Option<u32> = None;
     if let Some(pos) = args.iter().position(|arg| arg == "--dict-size") {
         if pos + 1 < args.len() {
@@ -48,12 +63,14 @@ fn main() {
                       && *arg != "--chunk-size"
                       && *arg != "--dict-size"
                       && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--chunk-size").map(|p| p+1)
-                      && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--dict-size").map(|p| p+1))
+                      && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--dict-size").map(|p| p+1)
+                      && *arg != "-h" && *arg != "--help") // Also filter help flags
         .cloned()
         .collect();
 
+    // If no command provided (only exe name), print usage
     if clean_args.len() < 2 {
-        print_usage();
+        print_usage(exe_name);
         return;
     }
 
@@ -65,6 +82,7 @@ fn main() {
         "-c" => {
             if clean_args.len() < 4 {
                 eprintln!("[!] Missing output path.");
+                print_usage(exe_name); // Show usage hint
                 return;
             }
             let input = &clean_args[2];
@@ -98,11 +116,13 @@ fn main() {
         "-d" => {
             if clean_args.len() < 4 {
                 eprintln!("[!] Missing output path.");
+                print_usage(exe_name);
                 return;
             }
             do_decompress(&clean_args[2], &clean_args[3]);
         },
         _ => {
+            // Auto-detect mode: if argument is an existing file, try to verify it
             if verify_flag || Path::new(mode_or_file).exists() {
                 let input_file = mode_or_file;
                 if !Path::new(input_file).exists() {
@@ -111,7 +131,8 @@ fn main() {
                 }
                 do_verify_standalone(input_file);
             } else {
-                print_usage();
+                eprintln!("[!] Unknown command or file not found: {}", mode_or_file);
+                print_usage(exe_name);
             }
         }
     }
@@ -123,6 +144,7 @@ fn parse_size(input: &str) -> Option<usize> {
     let input = input.trim().to_uppercase();
     let digits: String = input.chars().take_while(|c| c.is_digit(10)).collect();
     let unit_part: String = input.chars().skip(digits.len()).collect();
+    if digits.is_empty() { return None; } // Safety check
     let num = digits.parse::<usize>().ok()?;
     match unit_part.trim() {
         "GB" | "G" => Some(num * 1024 * 1024 * 1024),
@@ -143,11 +165,12 @@ fn format_bytes(n: usize) -> String {
     format!("{} bytes", result.chars().rev().collect::<String>())
 }
 
-fn print_usage() {
+// [UPDATED] Helper function accepting exe_name
+fn print_usage(exe_name: &str) {
     println!(
         "\nCAST (Columnar Agnostic Structural Transformation) CLI Tool\n\n\
         Usage:\n  \
-          cast [MODE] [INPUT] [OUTPUT] [OPTIONS]\n\n\
+          {} [MODE] [INPUT] [OUTPUT] [OPTIONS]\n\n\
         Modes:\n  \
           -c <in> <out>      Compress input file to CAST format\n  \
           -d <in> <out>      Decompress CAST file to original format\n  \
@@ -156,11 +179,13 @@ fn print_usage() {
           --multithread      Enable parallel processing for higher speed\n  \
           --chunk-size <S>   Process file in chunks (e.g., 512MB, 1GB, 50000B)\n  \
           --dict-size <S>    Set LZMA Dictionary size (Default: 128MB)\n  \
-          -v, --verify       (During compression) Run an immediate integrity check\n\n\
+          -v, --verify       (During compression) Run an immediate integrity check\n  \
+          -h, --help         Show this help message\n\n\
         Examples:\n  \
-          cast -c data.csv archive.gtf --multithread\n  \
-          cast -c large_log.txt archive.gtf --chunk-size 256MB --dict-size 256MB\n  \
-          cast -v archive.gtf"
+          {} -c data.csv archive.gtf --multithread\n  \
+          {} -c large_log.txt archive.gtf --chunk-size 256MB --dict-size 256MB\n  \
+          {} -v archive.gtf",
+        exe_name, exe_name, exe_name, exe_name
     );
 }
 
