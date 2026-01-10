@@ -36,6 +36,18 @@ This repository contains the source code and benchmarking tools used to produce 
 
 ---
 
+## 🚀 Usage: A Familiar CLI Experience
+
+CAST is designed to function as a **straightforward Command Line Interface (CLI)**, offering a drop-in user experience similar to standard utilities like `gzip`, `tar`, or `7z`. 
+It requires **no complex installation** or environment configuration: simply download and run.
+
+> **👉 Get Started:**
+> Detailed command references and build steps are strictly documented in the respective directories to ensure clarity:
+> * **[📂 Rust Implementation](./rust_impl/)** (**Recommended**): Instructions for the high-performance binary.
+> * **[📂 Python Implementation](./python_impl/)**: Instructions for the reference scripts.
+
+---
+
 ## 🔮 Current Scope & Future Direction
 
 ### ⚡ Current Focus: Archival & Full Restoration
