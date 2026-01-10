@@ -459,7 +459,7 @@ fn print_bench_usage() {
     println!(
         "\nCAST Benchmarking Harness (7-Zip Backend)\n\n\
         Usage:\n  \
-          cargo run --release --bin run_benchmarks -- --list <LIST> --compare-with <ALGOS> [OPTIONS]\n\n\
+          run_benchmarks --list <LIST> --compare-with <ALGOS> [OPTIONS]\n\n\
         Arguments:\n  \
           --list <file.txt>      File containing a list of paths to test (one per line)\n  \
           --compare-with <algos> Comma-separated list of competitors (e.g. 'lzma2,zstd')\n                         or 'all' for [lzma2, brotli, zstd]\n\n\
