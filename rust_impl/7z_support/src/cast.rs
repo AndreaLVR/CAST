@@ -4,6 +4,7 @@ use std::fs::{self, File};
 use std::io::{Write};
 use std::process::Command;
 use std::env;
+use std::path::Path;
 use std::borrow::Cow;
 
 use crc32fast::Hasher;
