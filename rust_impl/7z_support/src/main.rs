@@ -140,7 +140,7 @@ fn print_usage() {
     println!(
         "\nCAST (Columnar Agnostic Structural Transformation) CLI Tool\n\n\
         Usage:\n  \
-          cargo run --release -- [MODE] [INPUT] [OUTPUT] [OPTIONS]\n\n\
+          cast [MODE] [INPUT] [OUTPUT] [OPTIONS]\n\n\
         Modes:\n  \
           -c <in> <out>      Compress input file to CAST format\n  \
           -d <in> <out>      Decompress CAST file to original format\n  \
@@ -150,9 +150,9 @@ fn print_usage() {
           --dict-size <S>    Set 7-Zip LZMA Dictionary size (Default: 128MB)\n  \
           -v, --verify       (During compression) Run an immediate integrity check\n\n\
         Examples:\n  \
-          cargo run --release -- -c data.csv archive.gtf\n  \
-          cargo run --release -- -c large_log.txt archive.gtf --chunk-size 256MB --dict-size 256MB\n  \
-          cargo run --release -- -v archive.gtf"
+          cast -c data.csv archive.gtf\n  \
+          cast -c large_log.txt archive.gtf --chunk-size 256MB --dict-size 256MB\n  \
+          cast -v archive.gtf"
     );
 }
 
