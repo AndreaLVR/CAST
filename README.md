@@ -157,7 +157,10 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
 * **Pros:**
     * **Speed:** significantly faster on complex datasets, leveraging Rust's zero-cost abstractions.
     * **Scalability:** The `--chunk-size` and `--dict-size` features guarantee a constant and configurable memory footprint, preventing OS swapping.
-* **⚠️ Maturity Note:** While quite optimized and functional, this is **experimental code**. It lacks the extensive error handling, fuzz-testing, and security auditing required for a production-grade compression tool. It is intended to benchmark the *algorithm*, not to replace tools like `xz` or `zstd` in critical environments.
+* **⚠️ Maturity & Performance:** This engine is **engineered for robustness and high performance**, incorporating specific safeguards like **strictly bounded memory usage** and **automated binary detection** to prevent instability.
+    In particular, the **System Mode** pipeline demonstrates **Production-Grade Throughput**, often **exceeding the encoding speed of the standard 7-Zip baseline**.
+    However, it is classified as a **Research Prototype** primarily due to its recent development: it lacks the decades of community fuzz-testing and security auditing present in legacy tools like `xz` or `zstd`. It is fully functional and stable for benchmarking and archival, but should be evaluated with the awareness that it is a newly developed codebase.
+
 
 ### 2. 🐍 Python Implementation (Educational Reference)
 * **Goal:** **Algorithmic Readability & Logic Validation.**
