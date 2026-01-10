@@ -60,6 +60,10 @@ The internal architecture is already **Block-Based**. Future research aims to ev
 
 **This feature is envisioned as an opt-in CLI flag**, allowing users to choose between **Maximum Compression** (default monolithic stream) and **Seekability** depending on their specific requirements.
 
+### 🏗️ Architecture Consolidation
+Currently, the *Native* and *System* modes are distributed as separate implementations to strictly isolate the algorithmic baseline from system dependencies during scientific benchmarking. 
+Future releases will unify these into a single adaptive engine, introducing a runtime flag (e.g., `--mode auto|native`) to dynamically select the most efficient backend available on the host system.
+
 
 ---
 
