@@ -56,7 +56,10 @@ CAST is currently designed as a stream transformer for **high-efficiency archiva
 * **Access Pattern:** **Sequential Access**. The tool is optimized for scenarios where the full file is restored for processing.
 
 ### 🔭 Future Roadmap: Random Access
-The internal architecture is already **Block-Based**. Future research aims to **investigate the feasibility** of indexing these blocks to enable **Random Access**. If successful, this would allow querying specific parts of the file without full decompression.
+The internal architecture is already **Block-Based**. Future research aims to evolve this into an **Indexed Row Group** format. By appending a **Footer Index** and enforcing independent block compression, CAST could enable **efficient Random Access**, allowing users to query specific line ranges (e.g., *"fetch lines 10M-11M"*) without decoding the entire archive.
+
+**This feature is envisioned as an opt-in CLI flag**, allowing users to choose between **Maximum Compression** (default monolithic stream) and **Seekability** depending on their specific requirements.
+
 
 ---
 
