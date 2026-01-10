@@ -1,6 +1,5 @@
 # CAST: Python Reference Implementations
 
-> ⚠️ **Educational Purpose Only**
 >
 > These implementations are designed as **Readable References** to understand the CAST algorithm's logic, data structures (`Skeleton` + `Variables`), and serialization format.
 >
