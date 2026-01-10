@@ -60,11 +60,6 @@ The internal architecture is already **Block-Based**. Future research aims to ev
 
 **This feature is envisioned as an opt-in CLI flag**, allowing users to choose between **Maximum Compression** (default monolithic stream) and **Seekability** depending on their specific requirements.
 
-### 🏗️ Architecture Consolidation
-Currently, the *Native* and *System* modes are distributed as separate implementations to strictly isolate the algorithmic baseline from system dependencies during scientific benchmarking. 
-Future releases will unify these into a single adaptive engine, introducing a runtime flag (e.g., `--mode auto|native`) to dynamically select the most efficient backend available on the host system.
-
-
 ---
 
 ## 📊 Benchmarks & Performance Evaluation
@@ -174,6 +169,14 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
 * **Method:** A high-level implementation relying on **Standard Regex** for pattern detection, chosen for code clarity over the zero-copy byte parsing used in Rust.
 * **Role:** Designed as a readable reference for researchers to understand the core decomposition logic. It fully supports **Chunking** and **Dictionary Size configuration** via CLI, ensuring algorithmic parity with the Rust version.
 * **⚠️ Limitation:** Due to the overhead of the regex engine and the interpreter, this version is **not** intended for performance profiling and was **not** used for the official benchmarks presented in the paper.
+
+### 💡 Design Philosophy: Why are Native and System modes decoupled??
+You may notice that the *Native* and *System* modes are currently distributed as decoupled implementations. This is an intentional architectural choice to prevent **benchmark pollution**:
+
+* **Native Mode** serves as the dependency-free **Reference Implementation**, ensuring that the algorithmic efficiency metrics (Table 1) are derived *purely* from the transformation logic, strictly isolated from OS-level piping overhead or binary invocation latency.
+* **System Mode** is the specialized **High-Throughput Implementation**, specifically engineered to handle the complexity of inter-process communication for production scenarios.
+
+Merging them at this PoC stage would have introduced conditional complexity, obscuring the algorithmic clarity required for precise scientific benchmarking. **Upcoming releases will unify these into a single adaptive engine, introducing a runtime flag (e.g., `--mode auto|native`) to dynamically select the most efficient backend available on the host system.**
 
 ---
 
