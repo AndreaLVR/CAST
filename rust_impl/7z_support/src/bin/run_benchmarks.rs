@@ -22,9 +22,19 @@ struct BenchmarkResult {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    // [FIX] Added initial helper check
-    if args.len() < 2 {
-        print_bench_usage();
+    // --- 1. DYNAMIC EXECUTABLE NAME EXTRACTION ---
+    // Retrieve the real filename (e.g. "benchmarks-system-win-v0.1.0.exe")
+    // args[0] always contains the path to the executable.
+    let exe_path = Path::new(&args[0]);
+    let exe_name = exe_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("run_benchmarks");
+
+    // --- 2. HELP FLAG CHECK ---
+    // If -h or --help is present (or no args), print usage and exit immediately
+    if args.len() < 2 || args.iter().any(|arg| arg == "-h" || arg == "--help") {
+        print_bench_usage(exe_name);
         return;
     }
 
@@ -41,8 +51,8 @@ fn main() {
         }
     }
 
-    // 2. Parsing --dict-size <SIZE> (NEW)
-    let mut dict_size_bytes: u32 = 128 * 1024 * 1024; // Default 128 MB
+    // 2. Parsing --dict-size <SIZE> (Default: 128 MB)
+    let mut dict_size_bytes: u32 = 128 * 1024 * 1024;
     if let Some(pos) = args.iter().position(|arg| arg == "--dict-size") {
         if pos + 1 < args.len() {
             let val = &args[pos+1];
@@ -62,7 +72,7 @@ fn main() {
 
     if list_path_opt.is_none() {
         eprintln!("[!]  ERROR: Missing '--list <file.txt>'");
-        print_bench_usage(); // Suggest usage on error
+        print_bench_usage(exe_name); // Suggest usage with correct name
         std::process::exit(1);
     }
     let list_path = list_path_opt.unwrap();
@@ -74,7 +84,7 @@ fn main() {
 
     if competitors_opt.is_none() {
         eprintln!("[!]  ERROR: Missing '--compare-with <algos>'");
-        print_bench_usage(); // Suggest usage on error
+        print_bench_usage(exe_name); // Suggest usage with correct name
         std::process::exit(1);
     }
     let competitors_str = competitors_opt.unwrap();
@@ -262,7 +272,7 @@ fn run_cast_solid(data: &[u8], dict_size: u32, results: &mut Vec<BenchmarkResult
     io::stdout().flush().unwrap();
 
     let start = Instant::now();
-    // CHANGED: Pass dict_size
+    // Pass dict_size
     let mut compressor = CASTCompressor::new(true, dict_size);
     let (r, i, v, flag, _) = compressor.compress(data);
     let duration = start.elapsed().as_secs_f64();
@@ -279,7 +289,7 @@ fn run_cast_solid(data: &[u8], dict_size: u32, results: &mut Vec<BenchmarkResult
     let expected_crc = h.finalize();
     let decompressor = CASTDecompressor;
 
-    // [FIX] Handle Result type
+    // Handle Result type
     let check = std::panic::catch_unwind(|| {
         decompressor.decompress(&r, &i, &v, expected_crc, flag)
     });
@@ -317,7 +327,7 @@ fn run_cast_chunked(file_path: &str, chunk_size: usize, file_len: usize, dict_si
 
         // Compress
         let start = Instant::now();
-        // CHANGED: Pass dict_size
+        // Pass dict_size
         let mut compressor = CASTCompressor::new(true, dict_size);
         let (r, i, v, flag, _) = compressor.compress(chunk_data);
         total_time += start.elapsed().as_secs_f64();
@@ -332,7 +342,7 @@ fn run_cast_chunked(file_path: &str, chunk_size: usize, file_len: usize, dict_si
         let expected_crc = h.finalize();
         let decompressor = CASTDecompressor;
 
-        // [FIX] Handle Result type
+        // Handle Result type
         let check = std::panic::catch_unwind(|| {
             decompressor.decompress(&r, &i, &v, expected_crc, flag)
         });
@@ -360,7 +370,7 @@ fn run_competitor_solid(algo: &str, data: &[u8], dict_size: u32, results: &mut V
             print!("\n[*]  Running {} (Global/Solid)...", name);
             io::stdout().flush().unwrap();
             let start = Instant::now();
-            // CHANGED: Pass dict_size to your 7z helper
+            // Pass dict_size to your 7z helper
             let c = compress_with_7z(data, dict_size);
             let duration = start.elapsed().as_secs_f64();
             let size = c.len();
@@ -454,20 +464,22 @@ fn format_num_simple(n: usize) -> String {
     result.chars().rev().collect::<String>()
 }
 
-// [ADDED] The missing Helper function
-fn print_bench_usage() {
+// [UPDATED] Helper function accepting exe_name
+fn print_bench_usage(exe_name: &str) {
     println!(
         "\nCAST Benchmarking Harness (7-Zip Backend)\n\n\
         Usage:\n  \
-          run_benchmarks --list <LIST> --compare-with <ALGOS> [OPTIONS]\n\n\
+          {} --list <LIST> --compare-with <ALGOS> [OPTIONS]\n\n\
         Arguments:\n  \
           --list <file.txt>      File containing a list of paths to test (one per line)\n  \
           --compare-with <algos> Comma-separated list of competitors (e.g. 'lzma2,zstd')\n                         or 'all' for [lzma2, brotli, zstd]\n\n\
         Options:\n  \
           --chunk-size <SIZE>    Run CAST in Chunked Mode (e.g., 512MB, 1GB). Default: Solid Mode\n  \
-          --dict-size <SIZE>     Set 7-Zip LZMA Dictionary Size (Default: 128MB)\n\n\
+          --dict-size <SIZE>     Set 7-Zip LZMA Dictionary Size (Default: 128MB)\n  \
+          -h, --help             Show this help message\n\n\
         Examples:\n  \
-          run_benchmarks --list datasets.txt --compare-with lzma2\n  \
-          run_benchmarks --list big_logs.txt --compare-with all --chunk-size 512MB --dict-size 256MB"
+          {} --list datasets.txt --compare-with lzma2\n  \
+          {} --list big_logs.txt --compare-with all --chunk-size 512MB --dict-size 256MB",
+        exe_name, exe_name, exe_name
     );
 }
