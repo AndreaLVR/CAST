@@ -4,6 +4,7 @@ import struct
 import zlib
 import os
 import shutil
+import platform
 import subprocess
 from collections import Counter
 from typing import List, Tuple, Union, Optional
@@ -45,9 +46,37 @@ class CASTCompressor:
 
     def _find_7z(self) -> Optional[str]:
         env_path = os.environ.get("SEVEN_ZIP_PATH")
-        if env_path and os.path.exists(env_path):
-            return env_path
-        return shutil.which("7z") or shutil.which("7za")
+        if env_path:
+            env_path = env_path.strip('"')
+            if os.path.exists(env_path):
+                return env_path
+
+        system = platform.system().strip().lower()
+
+        if system == "windows":
+            default_win = r"C:\Program Files\7-Zip\7z.exe"
+            if os.path.exists(default_win):
+                return default_win
+
+        # 3. macOS
+        elif system == "darwin":
+            mac_paths = [
+                "/opt/homebrew/bin/7zz",  # Apple Silicon
+                "/usr/local/bin/7zz",  # Intel
+                "/usr/local/bin/7z"  # Legacy
+            ]
+            for p in mac_paths:
+                if os.path.exists(p):
+                    return p
+
+        # 4. Fallback
+        candidates = ["7zz", "7z", "7za"]
+        for candidate in candidates:
+            found = shutil.which(candidate)
+            if found:
+                return found
+
+        return None
 
     # CHANGED: Added dict_size parameter
     def _7z_compress(self, data: bytes, dict_size: int) -> bytes:
