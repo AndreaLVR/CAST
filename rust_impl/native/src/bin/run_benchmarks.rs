@@ -22,8 +22,18 @@ struct BenchmarkResult {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 2 {
-        print_bench_usage();
+    // --- 1. DYNAMIC EXECUTABLE NAME EXTRACTION ---
+    // Retrieve the real filename (e.g. "benchmarks-native-win-v0.1.0.exe")
+    let exe_path = Path::new(&args[0]);
+    let exe_name = exe_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("run_benchmarks");
+
+    // --- 2. HELP FLAG CHECK ---
+    // If -h or --help is present (or no args), print usage and exit
+    if args.len() < 2 || args.iter().any(|arg| arg == "-h" || arg == "--help") {
+        print_bench_usage(exe_name);
         return;
     }
 
@@ -64,7 +74,7 @@ fn main() {
 
     if list_path_opt.is_none() {
         eprintln!("[!]  ERROR: Missing '--list <file.txt>'");
-        print_bench_usage();
+        print_bench_usage(exe_name);
         std::process::exit(1);
     }
     let list_path = list_path_opt.unwrap();
@@ -76,7 +86,7 @@ fn main() {
 
     if competitors_opt.is_none() {
         eprintln!("[!]  ERROR: Missing '--compare-with <algos>'");
-        print_bench_usage();
+        print_bench_usage(exe_name);
         std::process::exit(1);
     }
     let competitors_str = competitors_opt.unwrap();
@@ -141,7 +151,7 @@ fn main() {
         let file_len = metadata.len() as usize;
         println!("  Original size: {}", format_bytes(file_len));
 
-        // --- PREVIEW SECTION (Opzionale, utile per debug visivo) ---
+        // --- PREVIEW SECTION ---
         if let Ok(f) = File::open(&file_path) {
              println!("  Preview (First 6 lines):");
              let reader = BufReader::new(f);
@@ -272,7 +282,7 @@ fn run_cast_solid_only(data: &[u8], multithread: bool, dict_size: u32, results: 
     let expected_crc = h.finalize();
     let decompressor = CASTDecompressor;
 
-    // [FIX] Handling Result type from decompress
+    // Handling Result type from decompress
     let check = std::panic::catch_unwind(|| {
         decompressor.decompress(&r, &i, &v, expected_crc, flag)
     });
@@ -325,7 +335,7 @@ fn run_cast_chunked_only(file_path: &str, chunk_size: usize, file_len: usize, mu
         let expected_crc = h.finalize();
         let decompressor = CASTDecompressor;
 
-        // [FIX] Handling Result type
+        // Handling Result type
         let check = std::panic::catch_unwind(|| {
             decompressor.decompress(&r, &i, &v, expected_crc, flag)
         });
@@ -449,20 +459,22 @@ fn format_num_simple(n: usize) -> String {
     result.chars().rev().collect::<String>()
 }
 
-fn print_bench_usage() {
+fn print_bench_usage(exe_name: &str) {
     println!(
         "\nCAST Benchmarking Harness (Native Backend)\n\n\
         Usage:\n  \
-          run_benchmarks --list <LIST> --compare-with <ALGOS> [OPTIONS]\n\n\
+          {} --list <LIST> --compare-with <ALGOS> [OPTIONS]\n\n\
         Arguments:\n  \
           --list <file.txt>      File containing a list of paths to test (one per line)\n  \
           --compare-with <algos> Comma-separated list of competitors (e.g. 'lzma2,zstd')\n                         or 'all' for [lzma2, brotli, zstd]\n\n\
         Options:\n  \
           --multithread          Enable multithreading for CAST and competitors\n  \
           --chunk-size <SIZE>    Run CAST in Chunked Mode (e.g., 512MB, 1GB). Default: Solid Mode\n  \
-          --dict-size <SIZE>     Set LZMA Dictionary Size (Default: 128MB)\n\n\
+          --dict-size <SIZE>     Set LZMA Dictionary Size (Default: 128MB)\n  \
+          -h, --help             Show this help message\n\n\
         Examples:\n  \
-          run_benchmarks --list datasets.txt --compare-with lzma2 --multithread\n  \
-          run_benchmarks --list big_logs.txt --compare-with all --chunk-size 512MB --dict-size 256MB"
+          {} --list datasets.txt --compare-with lzma2 --multithread\n  \
+          {} --list big_logs.txt --compare-with all --chunk-size 512MB --dict-size 256MB",
+        exe_name, exe_name, exe_name
     );
 }
