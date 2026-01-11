@@ -175,7 +175,7 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
 Since this project offers multiple implementations, detailed usage instructions, dependencies, and build commands are provided in the respective directories:
 
 * **📂 [Rust Implementation](./rust/)**: Refer to the inner README for the high-performance binary usage instructions.
-* **📂 [Python Implementation](./python/)**: Follow the instructions in the inner README to run the reference scripts.
+* **📂 [Python Implementation](./py/)**: Follow the instructions in the inner README to run the reference scripts.
 
 ---
 
