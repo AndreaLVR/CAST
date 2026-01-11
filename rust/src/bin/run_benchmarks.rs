@@ -119,7 +119,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    println!("\n\n|--   CAST: Columnar Agnostic Structural Transformation (Native)   --|\n");
+    println!("\n\n|--   CAST: Columnar Agnostic Structural Transformation   --|\n");
 
     // --- DETERMINE BACKEND ---
     let (use_7zip, backend_label) = match preferred_mode.as_str() {
@@ -553,14 +553,14 @@ fn format_num_simple(n: usize) -> String {
 
 fn print_bench_usage(exe_name: &str) {
     println!(
-        "\nCAST Benchmarking Harness (Native Backend)\n\n\
+        "\nCAST Benchmarking Harness\n\n\
         Usage:\n  \
           {} --list <LIST> --compare-with <ALGOS> [OPTIONS]\n\n\
         Arguments:\n  \
           --list <file.txt>      File containing a list of paths to test (one per line)\n  \
           --compare-with <algos> Comma-separated list of competitors (e.g. 'lzma2,zstd')\n                         or 'all' for [lzma2, brotli, zstd]\n\n\
         Options:\n  \
-          --mode <TYPE>          Backend selection: 'native' (default) or '7zip'\n  \
+          --mode <TYPE>          Backend selection: 'native' or '7zip' [default: auto]\n  \
           --multithread          Enable multithreading for CAST and competitors\n  \
           --chunk-size <SIZE>    Run CAST in Chunked Mode (e.g., 512MB, 1GB). Default: Solid Mode\n  \
           --dict-size <SIZE>     Set LZMA Dictionary Size (Default: 128MB)\n  \
