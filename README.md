@@ -67,7 +67,7 @@ The internal architecture is already **Block-Based**. Future research aims to ev
 > **ℹ️ Note on Backend:** While the CAST algorithm is fundamentally backend-agnostic (compatible with LZMA, Zstd, Brotli, etc.), the implementations provided in this repository are specifically tuned to leverage **LZMA2** as the reference backend to demonstrate maximum compression density (using a **default 128 MB dictionary**).
 
 > **⚖️ Note on Dataset Composition:**
-> The dataset selection is **intentionally weighted** towards the algorithm's target domain—structured machine-generated data—to fully explore the optimization potential in relevant scenarios.
+> The dataset selection is **intentionally weighted** towards the algorithm's target domain—structured and semi-structured text streams—to fully explore the optimization potential in relevant scenarios.
 > However, to define the algorithm's operational boundaries, we also included a small control group representing **low-redundancy scenarios** (including unstructured text and high-variance structured files). This verifies that CAST's benefits are strictly dependent on *exploitable* structural redundancy.
 
 To provide a comprehensive evaluation, this project features **two distinct implementations (Rust & Python)**, both supporting dual operating modes via the `--mode` flag:
