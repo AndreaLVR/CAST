@@ -38,13 +38,13 @@ This repository contains the source code and benchmarking tools used to produce 
 
 ## 🚀 Usage: A Familiar CLI Experience
 
-CAST is designed to function as a **straightforward Command Line Interface (CLI)**, offering a drop-in user experience similar to standard utilities like `gzip`, `tar`, or `7z`. 
+CAST is designed to function as a **straightforward Command Line Interface (CLI)**, offering a drop-in user experience similar to standard utilities like `gzip`, `tar`, or `7z`.
 It requires **no complex installation** or environment configuration: simply download and run.
 
 > **👉 Get Started:**
 > Detailed command references and build steps are strictly documented in the respective directories to ensure clarity:
-> * **[📂 Rust Implementation](./rust_impl/)** (**Recommended**): Instructions for the high-performance binary.
-> * **[📂 Python Implementation](./python_impl/)**: Instructions for the reference scripts.
+> * **[📂 Rust Implementation](./rust/)** (**Recommended**): Instructions for the high-performance binary.
+> * **[📂 Python Implementation](./python/)**: Instructions for the reference scripts.
 
 ---
 
@@ -70,7 +70,7 @@ The internal architecture is already **Block-Based**. Future research aims to ev
 > The dataset selection is **intentionally weighted** towards the algorithm's target domain—structured machine-generated data—to fully explore the optimization potential in relevant scenarios.
 > However, to define the algorithm's operational boundaries, we also included a small control group representing **low-redundancy scenarios** (including unstructured text and high-variance structured files). This verifies that CAST's benefits are strictly dependent on *exploitable* structural redundancy.
 
-To provide a comprehensive evaluation, this project features **two distinct Rust implementations**:
+To provide a comprehensive evaluation, this project features **two distinct implementations (Rust & Python)**, both supporting dual operating modes via the `--mode` flag:
 
 1.  **🦀 Rust Performance Engine:** The core implementation used for **ALL official benchmarks**.
     * *Native Mode:* Standalone, dependency-free. Used to measure **Algorithmic Efficiency (Compression Ratio)** without external overhead.
@@ -80,15 +80,15 @@ To provide a comprehensive evaluation, this project features **two distinct Rust
 
 > **⚠️ Note on Benchmarking Methodology:**
 >
-> 1.  **Compression Ratio (Table 1):** Measured using **Rust Native** to strictly isolate the algorithmic efficiency of the structural transformation.
+> 1.  **Compression Ratio (Table 1):** Measured using the **Native mode** to strictly isolate the algorithmic efficiency of the structural transformation.
 > 2.  **Throughput & Speedup (Table 2):** Evaluates the **CAST Pipeline (using 7-Zip)** against the **Standard 7-Zip Baseline**.
->     * This ensures a strictly fair comparison: both pipelines use the **exact same backend encoder binary** (7-Zip/LZMA2) and threading model. The observed speedup is attributable solely to the entropy reduction achieved by CAST's pre-processing.
->     * **Extended Dataset:** This suite includes **additional large-scale datasets** (e.g., >500 MB) tested exclusively in this mode to demonstrate the pipeline's scalability under heavy load conditions.
+>       * This ensures a strictly fair comparison: both pipelines use the **exact same backend encoder binary** (7-Zip/LZMA2) and threading model. The observed speedup is attributable solely to the entropy reduction achieved by CAST's pre-processing.
+>       * **Extended Dataset:** This suite includes **additional large-scale datasets** (e.g., >500 MB) tested exclusively in this mode to demonstrate the pipeline's scalability under heavy load conditions.
 
 ### 1. Algorithmic Efficiency (Compression Ratio)
 *Objective: Validate the mathematical efficiency of the structural transformation.*
 
-The table below compares **CAST (Rust Native)** against state-of-the-art compressors at their maximum settings. As shown, CAST demonstrates superior density **on structured inputs**, often delivering significantly faster encoding times due to reduced backend complexity.<br> **Conversely, on unstructured or high-entropy data where no clear pattern can be inferred, the algorithm automatically falls back to standard compression, yielding neutral or slightly worse results.**
+The table below compares **CAST (Rust Native)** against state-of-the-art compressors at their maximum settings. As shown, CAST demonstrates superior density **on structured and semi-structured inputs**, often delivering significantly faster encoding times due to reduced backend complexity.<br> **Conversely, on unstructured or high-entropy data where no clear pattern can be inferred, the algorithm automatically falls back to standard compression, yielding neutral or slightly worse results.**
 > **⚖️ Fair Comparison Methodology:**
 > To ensure a strictly fair comparison, all tests in this section were restricted to **single-threaded, monolithic execution** (loading the full dataset into memory), effectively isolating pure algorithmic efficiency from parallelization gains.
 > * **LZMA2 Parity:** The exact same configuration (Preset 9 Extreme, 128 MB Dictionary) was used for both the standalone LZMA2 competitor and the CAST backend.
@@ -105,7 +105,7 @@ The table below compares **CAST (Rust Native)** against state-of-the-art compres
 
 Here we measure the real-world "Time-to-Compression" trade-off.
 
-**Key Finding:** Contrary to the expectation that pre-processing adds latency, CAST is often **faster** than running standard compression directly on highly structured datasets. The entropy reduction allows the backend encoder to process the stream so efficiently that the **time saved during encoding outweighs the parsing overhead**.
+**Key Finding:** Contrary to the expectation that pre-processing adds latency, CAST is often **faster** than running standard compression directly on structured and semi-structured datasets. The entropy reduction allows the backend encoder to process the stream so efficiently that the **time saved during encoding outweighs the parsing overhead**.
 
 ![Rust Performance Benchmarks](paper/rust_7zip_benchmarks.png)
 
@@ -149,7 +149,7 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
 ### 1. 🦀 Rust Implementation (The Benchmark Engine)
 * **Goal:** **High-Performance, Density & Scalability.**
 * **Method:** A performance-oriented **research prototype** featuring a **Zero-Copy Parsing Strategy**, **Multithreading**, and **Stream Chunking** to handle gigabyte-sized files with constant memory footprint.
-* **Modes:**
+* **Unified Architecture:** The engine supports dynamic backend selection via the `--mode` flag:
     * **Native Mode:** Standalone implementation. Used to validate the **Algorithmic Efficiency (Maximum Density)** presented in Table 1.
     * **System Mode (7-Zip):** Invokes the external `7-Zip` CLI. Used to validate **Production Throughput**.
       > **💡 Recommendation:** This is the **preferred variant** for general usage. It achieves drastic speedups with **negligible compression loss** compared to the Native version.
@@ -163,20 +163,10 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
 
 ### 2. 🐍 Python Implementation (Educational Reference)
 * **Goal:** **Algorithmic Readability & Logic Validation.**
-* **Architecture:** Split into two variants to mirror the Rust structure:
-    * **Native Mode:** Pure Python, single-threaded (bound by GIL).
-    * **System Mode:** Multi-threaded via 7-Zip backend.
+* **Architecture:** Same dual-mode design as Rust (`native` vs `7zip` backends), controllable via CLI args.
 * **Method:** A high-level implementation relying on **Standard Regex** for pattern detection, chosen for code clarity over the zero-copy byte parsing used in Rust.
 * **Role:** Designed as a readable reference for researchers to understand the core decomposition logic. It fully supports **Chunking** and **Dictionary Size configuration** via CLI, ensuring algorithmic parity with the Rust version.
 * **⚠️ Limitation:** Due to the overhead of the regex engine and the interpreter, this version is **not** intended for performance profiling and was **not** used for the official benchmarks presented in the paper.
-
-### 💡 Design Philosophy: Why are Native and System modes decoupled??
-You may notice that the *Native* and *System* modes are currently distributed as decoupled implementations. This is an intentional architectural choice to prevent **benchmark pollution**:
-
-* **Native Mode** serves as the dependency-free **Reference Implementation**, ensuring that the algorithmic efficiency metrics (Table 1) are derived *purely* from the transformation logic, strictly isolated from OS-level piping overhead or binary invocation latency.
-* **System Mode** is the specialized **High-Throughput Implementation**, specifically engineered to handle the complexity of inter-process communication for production scenarios.
-
-Merging them at this PoC stage would have introduced conditional complexity, obscuring the algorithmic clarity required for precise scientific benchmarking. **Upcoming releases will unify these into a single adaptive engine, introducing a runtime flag (e.g., `--mode auto|native`) to dynamically select the most efficient backend available on the host system.**
 
 ---
 
@@ -184,8 +174,8 @@ Merging them at this PoC stage would have introduced conditional complexity, obs
 
 Since this project offers multiple implementations, detailed usage instructions, dependencies, and build commands are provided in the respective directories:
 
-* **📂 [Rust Implementation](./rust_impl/)**: Refer to the inner README to choose between the **7-Zip Backend** or **Native** version and for compilation steps.
-* **📂 [Python Implementation](./python_impl/)**: Follow the instructions in the inner README to run the reference scripts.
+* **📂 [Rust Implementation](./rust/)**: Refer to the inner README for the high-performance binary usage instructions.
+* **📂 [Python Implementation](./python/)**: Follow the instructions in the inner README to run the reference scripts.
 
 ---
 
@@ -198,7 +188,7 @@ If you use CAST in your research or production pipeline, please cite it as:
   author = {Olivari, Andrea},
   title = {CAST: Columnar Agnostic Structural Transformation},
   year = {2026},
-  url = {https://github.com/AndreaLVR/CAST},
+  url = {[https://github.com/AndreaLVR/CAST](https://github.com/AndreaLVR/CAST)},
   note = {A Schema-less Structural Preprocessing Algorithm for Improving General-Purpose Compression on Structured and Semi-structured Data.}
 }
 ```
