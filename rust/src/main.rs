@@ -145,11 +145,20 @@ fn main() {
                  std::process::exit(1);
             }
 
+            // MODIFICATO: Logica di visualizzazione della modalità
+            let mode_display = if use_7zip {
+                "MULTITHREAD (Implicit via 7-Zip)"
+            } else if use_multithread {
+                "MULTITHREAD"
+            } else {
+                "SOLID (SINGLE THREAD)"
+            };
+
             println!("\n[*] Starting Compression...");
             println!("      Input:       {}", input);
             println!("      Output:      {}", output);
             println!("      Backend:     {}", backend_label);
-            println!("      Mode:        {}", if use_multithread { "MULTITHREAD" } else { "SOLID (SINGLE THREAD)" });
+            println!("      Mode:        {}", mode_display);
 
             let final_dict = dict_size_bytes.unwrap_or(128 * 1024 * 1024);
             println!("      Dict Size:   {}", format_bytes(final_dict as usize));
