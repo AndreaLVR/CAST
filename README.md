@@ -42,7 +42,7 @@ CAST is designed to function as a **straightforward Command Line Interface (CLI)
 It requires **no complex installation** or environment configuration: simply download and run.
 
 > **👉 Get Started:**
-> Detailed command references and build steps are strictly documented in the respective directories to ensure clarity:
+> Detailed command references are strictly documented in the respective directories to ensure clarity:
 > * **[📂 Rust Implementation](./rust/)** (**Recommended**): Instructions for the high-performance binary.
 > * **[📂 Python Implementation](./py/)**: Instructions for the reference scripts.
 
