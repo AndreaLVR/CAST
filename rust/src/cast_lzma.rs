@@ -4,7 +4,7 @@ use std::process::Command;
 use std::fs::{self, File};
 use std::path::Path;
 use std::env;
-use rand::Rng; // Assumo che rand sia nel Cargo.toml come nel vecchio progetto
+use rand::Rng;
 
 use xz2::read::XzDecoder;
 use xz2::write::XzEncoder;
@@ -53,7 +53,6 @@ pub fn get_7z_cmd() -> String {
     "7z".to_string()
 }
 
-// MODIFICATO: Restituisce Option<String> con la path se trovato, altrimenti None
 pub fn try_find_7zip_path() -> Option<String> {
     let cmd = get_7z_cmd();
     // Simple check: try to run "7z" (or path) with no args or help
@@ -61,7 +60,6 @@ pub fn try_find_7zip_path() -> Option<String> {
     let exists = if cmd.contains("/") || cmd.contains("\\") {
         Path::new(&cmd).exists()
     } else {
-        // Se è solo un comando, proviamo a eseguirlo per vedere se il sistema lo risolve
         true
     };
 

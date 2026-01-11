@@ -211,7 +211,7 @@ fn parse_line_manual<'a>(line: &'a str, mode: ParsingMode, buffer_vars: &mut Vec
 }
 
 // ============================================================================
-//  UTILS (Native functions removed, moved to Utils only)
+//  UTILS
 // ============================================================================
 
 fn decode_python_latin1(data: &[u8]) -> String {

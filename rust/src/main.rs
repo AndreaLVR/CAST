@@ -15,7 +15,7 @@ use cast::cast_lzma::{
     RuntimeLzmaDecompressor,
     CASTLzmaCompressor,
     CASTLzmaDecompressor,
-    try_find_7zip_path // Importa la nuova funzione helper
+    try_find_7zip_path
 };
 
 fn main() {
@@ -98,17 +98,14 @@ fn main() {
     // DETERMINE BACKEND LOGIC
     let (use_7zip, backend_label) = match mode_arg.as_deref() {
         Some("native") => {
-            // Utente vuole esplicitamente native: non cerchiamo nemmeno 7zip.
             (false, "Native (xz2)".to_string())
         },
         Some("7zip") => {
-            // Utente vuole esplicitamente 7zip: lo cerchiamo e se non c'è diamo errore.
             if let Some(path) = try_find_7zip_path() {
                 (true, format!("7-Zip (External) [Found at: {}]", path))
             } else {
                 eprintln!("[!] CRITICAL ERROR: 7-Zip mode forced but executable not found.");
 
-                // Controllo se esiste la variabile d'ambiente per dare un hint più specifico
                 if let Ok(env_path) = env::var("SEVEN_ZIP_PATH") {
                     eprintln!("    The environment variable SEVEN_ZIP_PATH is set to '{}', but this path seems invalid or not executable.", env_path);
                 } else {
@@ -119,12 +116,10 @@ fn main() {
             }
         },
         _ => {
-            // Default (nessun parametro --mode): Proviamo a cercare 7zip.
             if let Some(path) = try_find_7zip_path() {
                 println!("[*] Auto-detected 7-Zip at: {}", path);
                 (true, format!("7-Zip (External) [Found at: {}]", path))
             } else {
-                // Se non lo troviamo, fallback silenzioso su native
                 (false, "Native (xz2) [Fallback]".to_string())
             }
         }
@@ -145,7 +140,6 @@ fn main() {
                  std::process::exit(1);
             }
 
-            // MODIFICATO: Logica di visualizzazione della modalità
             let mode_display = if use_7zip {
                 "MULTITHREAD (Implicit via 7-Zip)"
             } else if use_multithread {
