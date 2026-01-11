@@ -107,7 +107,7 @@ Here we measure the real-world "Time-to-Compression" trade-off.
 
 **Key Finding:** Contrary to the expectation that pre-processing adds latency, CAST is often **faster** than running standard compression directly on structured and semi-structured datasets. The entropy reduction allows the backend encoder to process the stream so efficiently that the **time saved during encoding outweighs the parsing overhead**.
 
-![Rust Performance Benchmarks](paper/rust_7zip_benchmarks.png)
+![Rust Performance Benchmarks](paper/rust_system_benchmarks.png)
 
 > *(See `paper/CAST_Paper.pdf` for high-resolution data)*
 
