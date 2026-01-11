@@ -1,5 +1,4 @@
 import argparse
-import lzma
 import os
 import struct
 import time
@@ -20,8 +19,15 @@ except ImportError:
 # Import CAST classes
 try:
     from cast import CASTCompressor, CASTDecompressor
+    from cast_lzma import (
+        RuntimeLzmaCompressor,
+        RuntimeLzmaDecompressor,
+        try_find_7zip_path,
+        SevenZipBackend,
+        LzmaBackend
+    )
 except ImportError:
-    print("[ERROR] File 'cast.py' not found in the current directory.")
+    print("[ERROR] File 'cast.py' or 'cast_lzma.py' not found in the current directory.")
     exit(1)
 
 
@@ -84,11 +90,19 @@ def main() -> None:
         help="Apply chunking ONLY to CAST (e.g. '100MB'). Competitors remain solid.",
     )
 
-    # CHANGED: Added dict-size argument
     parser.add_argument(
         "--dict-size",
         type=str,
         help="Set LZMA Dictionary Size (e.g. '128MB', '256MB'). Default: 128MB.",
+    )
+
+    # NEW: Mode
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=['native', '7zip', 'auto'],
+        default='auto',
+        help="Backend selection: 'native' or '7zip' (Default: auto)"
     )
 
     # Competitors
@@ -106,7 +120,7 @@ def main() -> None:
     # Parse chunk size
     CHUNK_SIZE = parse_human_size(args.chunk_size)
 
-    # CHANGED: Parse dict size
+    # Parse dict size
     DICT_SIZE = parse_human_size(args.dict_size)
     # Note: If None, cast.py handles the default (128MB) internally.
 
@@ -117,6 +131,33 @@ def main() -> None:
     if RUN_ZSTD and not zstd:
         print("NOTE: 'zstandard' module missing. Skipping.")
         RUN_ZSTD = False
+
+    # DETERMINE BACKEND
+    use_7zip = False
+    backend_label = "Native (lzma module)"
+
+    if args.mode == "native":
+        use_7zip = False
+    elif args.mode == "7zip":
+        path = try_find_7zip_path()
+        if path:
+            use_7zip = True
+            backend_label = f"7-Zip (External) [Found at: {path}]"
+        else:
+            print("[!] CRITICAL ERROR: 7-Zip mode forced but executable not found.")
+            if os.environ.get("SEVEN_ZIP_PATH"):
+                print(f"    SEVEN_ZIP_PATH is set to: {os.environ.get('SEVEN_ZIP_PATH')}")
+            else:
+                print("    Please install 7-Zip or set SEVEN_ZIP_PATH.")
+            exit(1)
+    else:  # Auto
+        path = try_find_7zip_path()
+        if path:
+            use_7zip = True
+            backend_label = f"7-Zip (External) [Found at: {path}]"
+        else:
+            use_7zip = False
+            backend_label = "Native (lzma module) [Fallback]"
 
     files_to_test = []
     if args.list:
@@ -133,15 +174,18 @@ def main() -> None:
         f"Competitors: LZMA={'ON' if RUN_LZMA else 'OFF'}, BROTLI={'ON' if RUN_BROTLI else 'OFF'}, ZSTD={'ON' if RUN_ZSTD else 'OFF'}"
     )
 
-    # Config Info
     dict_info = format_bytes(DICT_SIZE) if DICT_SIZE else "Default (128MB)"
+    threading_info = "MULTITHREAD (Implicit via 7-Zip)" if use_7zip else "SINGLE THREAD (Native)"
+
+    print(f"Backend:     {backend_label}")
+    print(f"Threading:   {threading_info}")
     if CHUNK_SIZE:
-        print(
-            f"CAST Config: CHUNKED ({format_bytes(CHUNK_SIZE)}) | Dict: {dict_info}"
-        )
+        print(f"CAST Config: CHUNKED ({format_bytes(CHUNK_SIZE)}) | Dict: {dict_info}")
     else:
         print(f"CAST Config: SOLID (Single Block) | Dict: {dict_info}")
     print("=" * 75)
+
+    backend_type_str = "7zip" if use_7zip else "native"
 
     for file_path in files_to_test:
         file_path = os.path.abspath(file_path)
@@ -178,27 +222,16 @@ def main() -> None:
             print("[1] LZMA (Extreme)... ", end="", flush=True)
             start = time.time()
             try:
-                # CHANGED: Logic to support custom dict_size for the competitor too (Parity)
-                if DICT_SIZE is not None:
-                    # If dict_size is specified, we must use filters, not preset
-                    lzma_filters = [{
-                        "id": lzma.FILTER_LZMA2,
-                        "preset": 9 | lzma.PRESET_EXTREME,
-                        "dict_size": DICT_SIZE
-                    }]
-                    c_data = lzma.compress(
-                        original_data,
-                        format=lzma.FORMAT_XZ,
-                        check=lzma.CHECK_CRC32,
-                        filters=lzma_filters
-                    )
+                # Use same backend as CAST for fair comparison
+                if use_7zip:
+                    # Use 7zip wrapper directly
+                    backend = SevenZipBackend(DICT_SIZE)
+                    c_data = backend.compress(original_data)
                 else:
-                    # Legacy/Default path
-                    c_data = lzma.compress(
-                        original_data,
-                        format=lzma.FORMAT_XZ,
-                        preset=9 | lzma.PRESET_EXTREME
-                    )
+                    # Native
+                    # We can use LzmaBackend directly to ensure identical parameters
+                    backend = LzmaBackend(DICT_SIZE)
+                    c_data = backend.compress(original_data)
 
                 times["LZMA"] = time.time() - start
                 results["LZMA"] = len(c_data)
@@ -251,9 +284,12 @@ def main() -> None:
                     offset += CHUNK_SIZE
 
                     chunk_crc = zlib.crc32(chunk)
-                    compressor = CASTCompressor()
-                    # CHANGED: Pass dict_size
-                    res = compressor.compress(chunk, dict_size=DICT_SIZE)
+
+                    # Instantiate backend per chunk (Runtime Wrapper)
+                    backend = RuntimeLzmaCompressor(backend_type_str, DICT_SIZE)
+                    compressor = CASTCompressor(backend)
+
+                    res = compressor.compress(chunk)
 
                     if isinstance(res, tuple) and len(res) >= 4:
                         c_reg, c_ids, c_vars, id_flag = res[:4]
@@ -276,9 +312,10 @@ def main() -> None:
                     del chunk, c_reg, c_ids, c_vars
             else:
                 # SOLID PROCESSING
-                compressor = CASTCompressor()
-                # CHANGED: Pass dict_size
-                res = compressor.compress(original_data, dict_size=DICT_SIZE)
+                backend = RuntimeLzmaCompressor(backend_type_str, DICT_SIZE)
+                compressor = CASTCompressor(backend)
+
+                res = compressor.compress(original_data)
 
                 if isinstance(res, tuple) and len(res) >= 4:
                     c_reg, c_ids, c_vars, id_flag = res[:4]
@@ -368,7 +405,10 @@ def main() -> None:
                             verified_ok = False
                             break
 
-                        dec = CASTDecompressor()
+                        # Decompress using same backend logic as compression
+                        backend = RuntimeLzmaDecompressor(backend_type_str)
+                        dec = CASTDecompressor(backend)
+
                         restored = dec.decompress(
                             body[:lr],
                             body[lr: lr + li],

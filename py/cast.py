@@ -1,10 +1,17 @@
-import lzma
 import re
 import struct
 import zlib
 from collections import Counter
 from typing import List, Tuple, Union, Optional
 
+# --- INTERFACES (Implicit Protocol) ---
+class NativeCompressor:
+    def compress(self, data: bytes) -> bytes:
+        raise NotImplementedError
+
+class NativeDecompressor:
+    def decompress(self, data: bytes) -> bytes:
+        raise NotImplementedError
 
 class CASTCompressor:
     """
@@ -17,7 +24,9 @@ class CASTCompressor:
     VAR_PLACEHOLDER_QUOTE = '"\uE000"'
     REG_SEP = "\uE001"
 
-    def __init__(self) -> None:
+    # CHANGED: Constructor accepts a backend instance
+    def __init__(self, backend: NativeCompressor) -> None:
+        self.backend = backend
         self.template_map = {}
         self.next_template_id = 0
         self.skeletons_list = []
@@ -88,11 +97,9 @@ class CASTCompressor:
         masked_line = self.active_pattern.sub(replace_callback, line)
         return masked_line, variables
 
-    # CHANGED: Added dict_size optional parameter (Default None to preserve legacy behavior)
     def compress(
             self,
-            input_data: Union[bytes, str],
-            dict_size: Optional[int] = None
+            input_data: Union[bytes, str]
     ) -> Tuple[bytes, bytes, bytes, int, str]:
         # --- 1. DECODING & LATIN-1 CHECK ---
         is_latin1 = False
@@ -166,6 +173,7 @@ class CASTCompressor:
                         break
 
             if len(sample_buffer) > 0:
+                # Using zlib just for heuristic check is fine, no heavy dependency
                 c_sample = zlib.compress(sample_buffer, level=1)
                 if len(c_sample) > 0:
                     ratio = len(sample_buffer) / len(c_sample)
@@ -254,22 +262,11 @@ class CASTCompressor:
                 vars_buffer.extend(col_blob)
                 vars_buffer.extend(COL_SEP)
 
-        # --- 5. COMPRESSION ---
+        # --- 5. COMPRESSION (DELEGATED TO BACKEND) ---
         if decision_mode == "SPLIT":
-            if dict_size is not None:
-                custom_filters = [{
-                    "id": lzma.FILTER_LZMA2,
-                    "preset": 9 | lzma.PRESET_EXTREME,
-                    "dict_size": dict_size
-                }]
-                c_reg = lzma.compress(raw_registry, check=lzma.CHECK_CRC32, filters=custom_filters)
-                c_ids = lzma.compress(raw_ids, check=lzma.CHECK_CRC32, filters=custom_filters)
-                c_vars = lzma.compress(vars_buffer, check=lzma.CHECK_CRC32, filters=custom_filters)
-            else:
-                c_reg = lzma.compress(raw_registry, preset=9)
-                c_ids = lzma.compress(raw_ids, preset=9)
-                c_vars = lzma.compress(vars_buffer, preset=9 | lzma.PRESET_EXTREME)
-
+            c_reg = self.backend.compress(raw_registry)
+            c_ids = self.backend.compress(raw_ids)
+            c_vars = self.backend.compress(vars_buffer)
             return c_reg, c_ids, c_vars, id_mode_flag, self.mode_name
         else:
             len_reg = len(raw_registry)
@@ -277,33 +274,19 @@ class CASTCompressor:
             # [FIX] Hybrid Logic for Bit-Perfect Benchmark Compatibility
             len_ids = 0
             if (id_mode_flag & 0x7F) == 3:
-                # Check if vars exist for the single template (ID 0)
-                # columns_storage is dict: { t_id: [ [col1], [col2] ] }
                 cols = self.columns_storage.get(0, [])
                 has_vars = len(cols) > 0
-
                 if has_vars:
-                    len_ids = 0  # Legacy behavior (Benchmark Safe)
+                    len_ids = 0  # Legacy
                 else:
-                    len_ids = total_rows  # New behavior (Fix for empty vars)
+                    len_ids = total_rows  # New behavior
             else:
                 len_ids = len(raw_ids)
 
             internal_header = struct.pack("<II", len_reg, len_ids)
             solid_block = internal_header + raw_registry + raw_ids + vars_buffer
 
-            final_dict_size = dict_size if dict_size is not None else 128 * 1024 * 1024
-
-            filters_unified = [
-                {
-                    "id": lzma.FILTER_LZMA2,
-                    "preset": 9 | lzma.PRESET_EXTREME,
-                    "dict_size": final_dict_size,
-                }
-            ]
-            c_solid = lzma.compress(
-                solid_block, check=lzma.CHECK_CRC32, filters=filters_unified
-            )
+            c_solid = self.backend.compress(solid_block)
             return b"", b"", c_solid, id_mode_flag, self.mode_name
 
     def _create_passthrough(
@@ -314,7 +297,7 @@ class CASTCompressor:
         else:
             data_bytes = data
 
-        c_vars = lzma.compress(data_bytes, preset=9 | lzma.PRESET_EXTREME)
+        c_vars = self.backend.compress(data_bytes)
         return b"", b"", c_vars, 255, reason
 
 
@@ -328,6 +311,10 @@ class CASTDecompressor:
     VAR_PLACEHOLDER = "\uE000"
     REG_SEP = "\uE001"
 
+    # CHANGED: Constructor accepts a backend instance
+    def __init__(self, backend: NativeDecompressor) -> None:
+        self.backend = backend
+
     def decompress(
             self,
             c_registry: bytes,
@@ -337,7 +324,7 @@ class CASTDecompressor:
             id_mode_flag: int = 0,
     ) -> bytes:
         if id_mode_flag == 255:
-            data = lzma.decompress(c_vars)
+            data = self.backend.decompress(c_vars)
             if expected_crc is not None and zlib.crc32(data) != expected_crc:
                 print("CRC ERROR (Passthrough)!")
             return data
@@ -364,7 +351,7 @@ class CASTDecompressor:
         num_rows_header = 0
 
         if is_unified:
-            full_payload = lzma.decompress(c_vars)
+            full_payload = self.backend.decompress(c_vars)
             len_reg, len_ids_or_rows = struct.unpack("<II", full_payload[:8])
             offset = 8
             reg_data_bytes = full_payload[offset: offset + len_reg]
@@ -387,14 +374,14 @@ class CASTDecompressor:
             else:
                 template_ids = self._unpack_ids(ids_data_bytes, real_id_flag)
         else:
-            reg_payload = lzma.decompress(c_registry)
+            reg_payload = self.backend.decompress(c_registry)
             reg_data = reg_payload.decode("utf-8")
             skeletons = reg_data.split(self.REG_SEP)
 
-            ids_data = lzma.decompress(c_ids)
+            ids_data = self.backend.decompress(c_ids)
             template_ids = self._unpack_ids(ids_data, real_id_flag)
 
-            vars_data_bytes = lzma.decompress(c_vars)
+            vars_data_bytes = self.backend.decompress(c_vars)
 
         # --- 3. COLUMN PARSING (MANUAL BYTE SCAN) ---
         raw_columns_offsets = []

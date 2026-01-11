@@ -5,14 +5,23 @@ use std::path::Path;
 use std::time::Instant;
 use crc32fast::Hasher;
 
-// Assuming the module structure is correct based on your project
-use cast::cast::{CASTCompressor, CASTDecompressor};
+// Import implementations including the new Runtime wrappers and 7z utils
+use cast::cast_lzma::{
+    LzmaBackend,
+    LzmaDecompressorBackend,
+    SevenZipBackend,
+    SevenZipDecompressorBackend,
+    RuntimeLzmaCompressor,
+    RuntimeLzmaDecompressor,
+    CASTLzmaCompressor,
+    CASTLzmaDecompressor,
+    try_find_7zip_path
+};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
 
     // --- 1. DYNAMIC EXECUTABLE NAME EXTRACTION ---
-    // Retrieve the real filename (e.g. "cast-native-win-v0.1.0.exe")
     let exe_path = Path::new(&args[0]);
     let exe_name = exe_path
         .file_name()
@@ -20,7 +29,6 @@ fn main() {
         .unwrap_or("cast");
 
     // --- 2. HELP FLAG CHECK ---
-    // If -h or --help is present, print usage and exit immediately
     if args.iter().any(|arg| arg == "-h" || arg == "--help") {
         print_usage(exe_name);
         return;
@@ -57,18 +65,27 @@ fn main() {
         }
     }
 
+    // Mode Parsing (Native vs 7Zip) - Default is now handled via Option logic below
+    let mut mode_arg: Option<String> = None;
+    if let Some(pos) = args.iter().position(|arg| arg == "--mode") {
+        if pos + 1 < args.len() {
+            mode_arg = Some(args[pos+1].to_lowercase());
+        }
+    }
+
     // Filter out args
     let clean_args: Vec<String> = args.iter()
         .filter(|arg| *arg != "--multithread" && *arg != "-v" && *arg != "--verify"
                       && *arg != "--chunk-size"
                       && *arg != "--dict-size"
+                      && *arg != "--mode"
                       && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--chunk-size").map(|p| p+1)
                       && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--dict-size").map(|p| p+1)
-                      && *arg != "-h" && *arg != "--help") // Also filter help flags
+                      && args.iter().position(|x| x == *arg) != args.iter().position(|x| x == "--mode").map(|p| p+1)
+                      && *arg != "-h" && *arg != "--help")
         .cloned()
         .collect();
 
-    // If no command provided (only exe name), print usage
     if clean_args.len() < 2 {
         print_usage(exe_name);
         return;
@@ -78,11 +95,41 @@ fn main() {
 
     println!("\n\n|--    CAST: Columnar Agnostic Structural Transformation    --|\n");
 
+    // DETERMINE BACKEND LOGIC
+    let (use_7zip, backend_label) = match mode_arg.as_deref() {
+        Some("native") => {
+            (false, "Native (xz2)".to_string())
+        },
+        Some("7zip") => {
+            if let Some(path) = try_find_7zip_path() {
+                (true, format!("7-Zip (External) [Found at: {}]", path))
+            } else {
+                eprintln!("[!] CRITICAL ERROR: 7-Zip mode forced but executable not found.");
+
+                if let Ok(env_path) = env::var("SEVEN_ZIP_PATH") {
+                    eprintln!("    The environment variable SEVEN_ZIP_PATH is set to '{}', but this path seems invalid or not executable.", env_path);
+                } else {
+                    eprintln!("    Could not find '7z' or '7zz' in standard paths or PATH.");
+                    eprintln!("    Please install 7-Zip or set the SEVEN_ZIP_PATH environment variable.");
+                }
+                std::process::exit(1);
+            }
+        },
+        _ => {
+            if let Some(path) = try_find_7zip_path() {
+                println!("[*] Auto-detected 7-Zip at: {}", path);
+                (true, format!("7-Zip (External) [Found at: {}]", path))
+            } else {
+                (false, "Native (xz2) [Fallback]".to_string())
+            }
+        }
+    };
+
     match mode_or_file.as_str() {
         "-c" => {
             if clean_args.len() < 4 {
                 eprintln!("[!] Missing output path.");
-                print_usage(exe_name); // Show usage hint
+                print_usage(exe_name);
                 return;
             }
             let input = &clean_args[2];
@@ -93,24 +140,30 @@ fn main() {
                  std::process::exit(1);
             }
 
+            let mode_display = if use_7zip {
+                "MULTITHREAD (Implicit via 7-Zip)"
+            } else if use_multithread {
+                "MULTITHREAD"
+            } else {
+                "SOLID (SINGLE THREAD)"
+            };
+
             println!("\n[*] Starting Compression...");
             println!("      Input:       {}", input);
             println!("      Output:      {}", output);
-            println!("      Mode:        {}", if use_multithread { "MULTITHREAD" } else { "SOLID (SINGLE THREAD)" });
+            println!("      Backend:     {}", backend_label);
+            println!("      Mode:        {}", mode_display);
 
             let final_dict = dict_size_bytes.unwrap_or(128 * 1024 * 1024);
             println!("      Dict Size:   {}", format_bytes(final_dict as usize));
 
+            do_compress(input, output, use_multithread, chunk_size_bytes, final_dict, use_7zip);
 
-            // 1. Perform ONLY compression
-            do_compress(input, output, use_multithread, chunk_size_bytes, final_dict);
-
-            // 2. If requested, perform verification
             if verify_flag {
                 println!("\n------------------------------------------------");
                 println!("[*] Starting Post-Compression Verification...");
                 std::thread::sleep(std::time::Duration::from_millis(500));
-                do_verify_standalone(output);
+                do_verify_standalone(output, use_7zip);
             }
         },
         "-d" => {
@@ -119,17 +172,20 @@ fn main() {
                 print_usage(exe_name);
                 return;
             }
-            do_decompress(&clean_args[2], &clean_args[3]);
+            println!("\n[*] Starting Decompression...");
+            println!("      Backend:     {}", backend_label);
+            do_decompress(&clean_args[2], &clean_args[3], use_7zip);
         },
         _ => {
-            // Auto-detect mode: if argument is an existing file, try to verify it
             if verify_flag || Path::new(mode_or_file).exists() {
                 let input_file = mode_or_file;
                 if !Path::new(input_file).exists() {
                     eprintln!("[!] Error: File '{}' not found.", input_file);
                     return;
                 }
-                do_verify_standalone(input_file);
+                println!("\n[*] Starting Verification...");
+                println!("      Backend:     {}", backend_label);
+                do_verify_standalone(input_file, use_7zip);
             } else {
                 eprintln!("[!] Unknown command or file not found: {}", mode_or_file);
                 print_usage(exe_name);
@@ -144,7 +200,7 @@ fn parse_size(input: &str) -> Option<usize> {
     let input = input.trim().to_uppercase();
     let digits: String = input.chars().take_while(|c| c.is_digit(10)).collect();
     let unit_part: String = input.chars().skip(digits.len()).collect();
-    if digits.is_empty() { return None; } // Safety check
+    if digits.is_empty() { return None; }
     let num = digits.parse::<usize>().ok()?;
     match unit_part.trim() {
         "GB" | "G" => Some(num * 1024 * 1024 * 1024),
@@ -165,7 +221,6 @@ fn format_bytes(n: usize) -> String {
     format!("{} bytes", result.chars().rev().collect::<String>())
 }
 
-// [UPDATED] Helper function accepting exe_name
 fn print_usage(exe_name: &str) {
     println!(
         "\nCAST (Columnar Agnostic Structural Transformation) CLI Tool\n\n\
@@ -176,14 +231,15 @@ fn print_usage(exe_name: &str) {
           -d <in> <out>      Decompress CAST file to original format\n  \
           -v <file>          Verify the integrity of a CAST file\n\n\
         Options:\n  \
+          --mode <TYPE>      Backend selection: 'native' or '7zip'\n                         (Default: Auto-detect 7zip, fallback to native)\n  \
           --multithread      Enable parallel processing for higher speed\n  \
           --chunk-size <S>   Process file in chunks (e.g., 512MB, 1GB, 50000B)\n  \
           --dict-size <S>    Set LZMA Dictionary size (Default: 128MB)\n  \
           -v, --verify       (During compression) Run an immediate integrity check\n  \
           -h, --help         Show this help message\n\n\
         Examples:\n  \
-          {} -c data.csv archive.gtf --multithread\n  \
-          {} -c large_log.txt archive.gtf --chunk-size 256MB --dict-size 256MB\n  \
+          {} -c data.csv archive.gtf --mode 7zip\n  \
+          {} -c large_log.txt archive.gtf --chunk-size 256MB\n  \
           {} -v archive.gtf",
         exe_name, exe_name, exe_name, exe_name
     );
@@ -191,7 +247,7 @@ fn print_usage(exe_name: &str) {
 
 // --- COMPRESSION ---
 
-fn do_compress(input_path: &str, output_path: &str, multithread: bool, chunk_bytes_limit: Option<usize>, dict_size: u32) {
+fn do_compress(input_path: &str, output_path: &str, multithread: bool, chunk_bytes_limit: Option<usize>, dict_size: u32, use_7zip: bool) {
     let start_total = Instant::now();
     let mut f_in = File::open(input_path).expect("Error opening input");
     let mut f_out = File::create(output_path).expect("Error creating output");
@@ -218,7 +274,6 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, chunk_byt
         chunk_count += 1;
         let chunk_data = &buffer[0..current_read];
 
-        // UI: Print IMMEDIATELY, BEFORE any heavy calculation
         print!("\r       Processing Chunk #{} ({})... ", chunk_count, format_bytes(chunk_data.len()));
         io::stdout().flush().unwrap();
 
@@ -227,8 +282,15 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, chunk_byt
         h.update(chunk_data);
         let chunk_crc = h.finalize();
 
-        // CAST Compression (Pass dict_size)
-        let mut compressor = CASTCompressor::new(multithread, dict_size);
+        // CAST Compression (Backend Selection)
+        // Wraps the specific backend in the Runtime Enum
+        let backend = if use_7zip {
+            RuntimeLzmaCompressor::SevenZip(SevenZipBackend::new(dict_size))
+        } else {
+            RuntimeLzmaCompressor::Native(LzmaBackend::new(multithread, dict_size))
+        };
+
+        let mut compressor = CASTLzmaCompressor::new(backend);
         let (c_reg, c_ids, c_vars, id_flag, _) = compressor.compress(chunk_data);
 
         let mut header = Vec::new();
@@ -262,7 +324,7 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, chunk_byt
 
 // --- DECOMPRESSION ---
 
-fn do_decompress(input_path: &str, output_path: &str) {
+fn do_decompress(input_path: &str, output_path: &str, use_7zip: bool) {
     let start = Instant::now();
     let f_in = File::open(input_path).expect("Error opening archive");
 
@@ -273,7 +335,15 @@ fn do_decompress(input_path: &str, output_path: &str) {
 
     let mut reader = std::io::BufReader::new(f_in);
     let mut f_out = File::create(output_path).expect("Error creating output");
-    let decompressor = CASTDecompressor;
+
+    // Backend Selection for Decompressor
+    let backend = if use_7zip {
+        RuntimeLzmaDecompressor::SevenZip(SevenZipDecompressorBackend)
+    } else {
+        RuntimeLzmaDecompressor::Native(LzmaDecompressorBackend)
+    };
+
+    let decompressor = CASTLzmaDecompressor::new(backend);
     let mut chunk_idx = 0;
 
     println!("\n[*]    Extracting stream...");
@@ -309,7 +379,6 @@ fn do_decompress(input_path: &str, output_path: &str) {
         let chunk_ids = &body_buffer[l_reg .. l_reg+l_ids];
         let chunk_vars = &body_buffer[l_reg+l_ids .. l_reg+l_ids+l_vars];
 
-        // CHECK RESULT FROM DECOMPRESS
         match decompressor.decompress(chunk_reg, chunk_ids, chunk_vars, expected_crc, id_flag) {
             Ok(restored) => f_out.write_all(&restored).unwrap(),
             Err(e) => {
@@ -326,11 +395,19 @@ fn do_decompress(input_path: &str, output_path: &str) {
 
 // --- VERIFICATION ---
 
-fn do_verify_standalone(input_path: &str) {
+fn do_verify_standalone(input_path: &str, use_7zip: bool) {
     let start = Instant::now();
     let f_in = File::open(input_path).expect("Error opening archive");
     let mut reader = std::io::BufReader::new(f_in);
-    let decompressor = CASTDecompressor;
+
+    // Backend Selection for Verification
+    let backend = if use_7zip {
+        RuntimeLzmaDecompressor::SevenZip(SevenZipDecompressorBackend)
+    } else {
+        RuntimeLzmaDecompressor::Native(LzmaDecompressorBackend)
+    };
+
+    let decompressor = CASTLzmaDecompressor::new(backend);
     let mut chunk_idx = 0;
 
     println!("[*]    Verifying Stream Integrity (RAM Optimized)...");
@@ -361,7 +438,6 @@ fn do_verify_standalone(input_path: &str) {
         let chunk_ids = &body_buffer[l_reg .. l_reg+l_ids];
         let chunk_vars = &body_buffer[l_reg+l_ids .. l_reg+l_ids+l_vars];
 
-        // CHECK RESULT
         match decompressor.decompress(chunk_reg, chunk_ids, chunk_vars, expected_crc, id_flag) {
             Ok(restored) => {
                 let mut h = Hasher::new();

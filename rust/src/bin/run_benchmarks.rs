@@ -5,11 +5,20 @@ use std::path::Path;
 use std::time::Instant;
 use crc32fast::Hasher;
 
-// Import struct and the NATIVE helper function
-use cast::cast::{
-    CASTCompressor,
-    CASTDecompressor,
-    compress_buffer_native
+// Import Trait (per usare .compress() sul backend)
+use cast::cast::NativeCompressor;
+
+// Import implementazioni specifiche LZMA, 7Zip e Runtime Wrappers
+use cast::cast_lzma::{
+    LzmaBackend,
+    LzmaDecompressorBackend,
+    SevenZipBackend,
+    SevenZipDecompressorBackend,
+    RuntimeLzmaCompressor,
+    RuntimeLzmaDecompressor,
+    CASTLzmaCompressor,
+    CASTLzmaDecompressor,
+    try_find_7zip_path
 };
 
 // Struct to store results for final ranking
@@ -67,7 +76,15 @@ fn main() {
         }
     }
 
-    // 4. Parsing --list
+    // 4. Parsing --mode <native|7zip> (NEW)
+    let mut preferred_mode = "auto".to_string();
+    if let Some(pos) = args.iter().position(|arg| arg == "--mode") {
+        if pos + 1 < args.len() {
+            preferred_mode = args[pos+1].to_lowercase();
+        }
+    }
+
+    // 5. Parsing --list
     let list_path_opt = args.windows(2)
         .find(|w| w[0] == "--list")
         .map(|w| w[1].clone());
@@ -79,7 +96,7 @@ fn main() {
     }
     let list_path = list_path_opt.unwrap();
 
-    // 5. Parsing --compare-with
+    // 6. Parsing --compare-with
     let competitors_opt = args.windows(2)
         .find(|w| w[0] == "--compare-with")
         .map(|w| w[1].clone());
@@ -104,6 +121,33 @@ fn main() {
 
     println!("\n\n|--   CAST: Columnar Agnostic Structural Transformation (Native)   --|\n");
 
+    // --- DETERMINE BACKEND ---
+    let (use_7zip, backend_label) = match preferred_mode.as_str() {
+        "native" => (false, "Native (xz2)".to_string()),
+        "7zip" => {
+            if let Some(path) = try_find_7zip_path() {
+                (true, format!("7-Zip (External) [Found at: {}]", path))
+            } else {
+                eprintln!("[!] CRITICAL ERROR: 7-Zip mode forced but executable not found.");
+                if let Ok(env_path) = env::var("SEVEN_ZIP_PATH") {
+                    eprintln!("    The environment variable SEVEN_ZIP_PATH is set to '{}', but this path seems invalid or not executable.", env_path);
+                } else {
+                    eprintln!("    Could not find '7z' or '7zz' in standard paths or PATH.");
+                    eprintln!("    Please install 7-Zip or set the SEVEN_ZIP_PATH environment variable.");
+                }
+                std::process::exit(1);
+            }
+        },
+        _ => {
+            // Auto
+            if let Some(path) = try_find_7zip_path() {
+                (true, format!("7-Zip (External) [Found at: {}]", path))
+            } else {
+                (false, "Native (xz2) [Fallback]".to_string())
+            }
+        }
+    };
+
     // --- LOAD FILE LIST ---
     let mut files_to_test = Vec::new();
     println!("\n[*]  Reading list: {}", list_path);
@@ -126,9 +170,19 @@ fn main() {
 
     // --- SUITE INFO ---
     let threads = num_cpus::get();
+
+    let mode_display = if use_7zip {
+        "MULTITHREAD (Implicit via 7-Zip)".to_string()
+    } else if use_multithread {
+        format!("MULTITHREAD ({} threads)", threads)
+    } else {
+        "SOLID (1 thread)".to_string()
+    };
+
     println!("\nBENCHMARK SUITE");
     println!("--------------------------------------------------");
-    println!("Mode:               {}", if use_multithread { format!("MULTITHREAD ({} threads)", threads) } else { "SOLID (1 thread)".to_string() });
+    println!("Backend:            {}", backend_label);
+    println!("Mode:               {}", mode_display);
 
     if let Some(cs) = chunk_size_bytes {
         println!("CAST Chunking:      ACTIVE ({} per block)", format_bytes(cs));
@@ -176,13 +230,13 @@ fn main() {
         // 1: CAST
         // ---------------------------------------------------------
         if let Some(chunk_size) = chunk_size_bytes {
-            run_cast_chunked_only(&file_path, chunk_size, file_len, use_multithread, dict_size_bytes, &mut results);
+            run_cast_chunked_only(&file_path, chunk_size, file_len, use_multithread, dict_size_bytes, use_7zip, &mut results);
         } else {
              let data = match std::fs::read(&file_path) {
                 Ok(d) => d,
                 Err(e) => { eprintln!("[!]  Read Error: {}", e); continue; }
             };
-            run_cast_solid_only(&data, use_multithread, dict_size_bytes, &mut results);
+            run_cast_solid_only(&data, use_multithread, dict_size_bytes, use_7zip, &mut results);
         }
 
         // ---------------------------------------------------------
@@ -196,7 +250,7 @@ fn main() {
 
             if !full_data.is_empty() {
                 for algo in &competitors {
-                    run_competitor_solid(algo, &full_data, use_multithread, dict_size_bytes, &mut results);
+                    run_competitor_solid(algo, &full_data, use_multithread, dict_size_bytes, use_7zip, &mut results);
                 }
             }
         }
@@ -260,13 +314,21 @@ fn main() {
 
 // --- CAST LOGIC ONLY ---
 
-fn run_cast_solid_only(data: &[u8], multithread: bool, dict_size: u32, results: &mut Vec<BenchmarkResult>) {
+fn run_cast_solid_only(data: &[u8], multithread: bool, dict_size: u32, use_7zip: bool, results: &mut Vec<BenchmarkResult>) {
     let orig_len = data.len();
     print!("\n[*] Running CAST (Global)...");
     io::stdout().flush().unwrap();
 
     let start = Instant::now();
-    let mut compressor = CASTCompressor::new(multithread, dict_size);
+
+    // Backend Construction (Runtime Enum)
+    let backend = if use_7zip {
+        RuntimeLzmaCompressor::SevenZip(SevenZipBackend::new(dict_size))
+    } else {
+        RuntimeLzmaCompressor::Native(LzmaBackend::new(multithread, dict_size))
+    };
+
+    let mut compressor = CASTLzmaCompressor::new(backend);
     let (r, i, v, flag, _) = compressor.compress(data);
     let duration = start.elapsed().as_secs_f64();
     let size = 17 + r.len() + i.len() + v.len();
@@ -280,7 +342,13 @@ fn run_cast_solid_only(data: &[u8], multithread: bool, dict_size: u32, results: 
     let mut h = Hasher::new();
     h.update(data);
     let expected_crc = h.finalize();
-    let decompressor = CASTDecompressor;
+
+    let decompressor_backend = if use_7zip {
+        RuntimeLzmaDecompressor::SevenZip(SevenZipDecompressorBackend)
+    } else {
+        RuntimeLzmaDecompressor::Native(LzmaDecompressorBackend)
+    };
+    let decompressor = CASTLzmaDecompressor::new(decompressor_backend);
 
     // Handling Result type from decompress
     let check = std::panic::catch_unwind(|| {
@@ -294,7 +362,7 @@ fn run_cast_solid_only(data: &[u8], multithread: bool, dict_size: u32, results: 
     }
 }
 
-fn run_cast_chunked_only(file_path: &str, chunk_size: usize, file_len: usize, multithread: bool, dict_size: u32, results: &mut Vec<BenchmarkResult>) {
+fn run_cast_chunked_only(file_path: &str, chunk_size: usize, file_len: usize, multithread: bool, dict_size: u32, use_7zip: bool, results: &mut Vec<BenchmarkResult>) {
     print!("\n[*] Running CAST (Chunked)...");
     io::stdout().flush().unwrap();
 
@@ -321,7 +389,15 @@ fn run_cast_chunked_only(file_path: &str, chunk_size: usize, file_len: usize, mu
 
         // Compress
         let start = Instant::now();
-        let mut compressor = CASTCompressor::new(multithread, dict_size);
+
+        // Backend Construction per chunk
+        let backend = if use_7zip {
+            RuntimeLzmaCompressor::SevenZip(SevenZipBackend::new(dict_size))
+        } else {
+            RuntimeLzmaCompressor::Native(LzmaBackend::new(multithread, dict_size))
+        };
+        let mut compressor = CASTLzmaCompressor::new(backend);
+
         let (r, i, v, flag, _) = compressor.compress(chunk_data);
         total_time += start.elapsed().as_secs_f64();
 
@@ -333,7 +409,13 @@ fn run_cast_chunked_only(file_path: &str, chunk_size: usize, file_len: usize, mu
         let mut h = Hasher::new();
         h.update(chunk_data);
         let expected_crc = h.finalize();
-        let decompressor = CASTDecompressor;
+
+        let decompressor_backend = if use_7zip {
+            RuntimeLzmaDecompressor::SevenZip(SevenZipDecompressorBackend)
+        } else {
+            RuntimeLzmaDecompressor::Native(LzmaDecompressorBackend)
+        };
+        let decompressor = CASTLzmaDecompressor::new(decompressor_backend);
 
         // Handling Result type
         let check = std::panic::catch_unwind(|| {
@@ -355,7 +437,7 @@ fn run_cast_chunked_only(file_path: &str, chunk_size: usize, file_len: usize, mu
 
 // --- COMPETITORS LOGIC (ALWAYS SOLID) ---
 
-fn run_competitor_solid(algo: &str, data: &[u8], multithread: bool, dict_size: u32, results: &mut Vec<BenchmarkResult>) {
+fn run_competitor_solid(algo: &str, data: &[u8], multithread: bool, dict_size: u32, use_7zip: bool, results: &mut Vec<BenchmarkResult>) {
     let orig_len = data.len();
     match algo {
         "lzma2" => {
@@ -363,7 +445,17 @@ fn run_competitor_solid(algo: &str, data: &[u8], multithread: bool, dict_size: u
             print!("\n[*] Running {} (XZ - Global)...", name);
             io::stdout().flush().unwrap();
             let start = Instant::now();
-            let c = compress_buffer_native(data, multithread, dict_size);
+
+            // MODIFICATO: Usiamo lo stesso backend scelto per CAST per fare il confronto ad armi pari
+            // Se CAST usa 7-Zip, anche il competitor LZMA2 usa 7-Zip.
+            let backend = if use_7zip {
+                RuntimeLzmaCompressor::SevenZip(SevenZipBackend::new(dict_size))
+            } else {
+                RuntimeLzmaCompressor::Native(LzmaBackend::new(multithread, dict_size))
+            };
+
+            let c = backend.compress(data);
+
             let duration = start.elapsed().as_secs_f64();
             let size = c.len();
             print_result(duration, size, orig_len);
@@ -468,6 +560,7 @@ fn print_bench_usage(exe_name: &str) {
           --list <file.txt>      File containing a list of paths to test (one per line)\n  \
           --compare-with <algos> Comma-separated list of competitors (e.g. 'lzma2,zstd')\n                         or 'all' for [lzma2, brotli, zstd]\n\n\
         Options:\n  \
+          --mode <TYPE>          Backend selection: 'native' (default) or '7zip'\n  \
           --multithread          Enable multithreading for CAST and competitors\n  \
           --chunk-size <SIZE>    Run CAST in Chunked Mode (e.g., 512MB, 1GB). Default: Solid Mode\n  \
           --dict-size <SIZE>     Set LZMA Dictionary Size (Default: 128MB)\n  \

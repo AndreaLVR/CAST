@@ -6,8 +6,14 @@ import zlib
 
 try:
     from cast import CASTCompressor, CASTDecompressor
-except ImportError:
-    print("[ERROR] File 'cast.py' not found. Ensure it is in the same directory.")
+    from cast_lzma import (
+        CASTLzmaCompressor,
+        CASTLzmaDecompressor,
+        try_find_7zip_path,
+        get_7z_cmd
+    )
+except ImportError as e:
+    print(f"[ERROR] Import failed: {e}. Ensure cast.py and cast_lzma.py are in the same directory.")
     sys.exit(1)
 
 
@@ -25,9 +31,9 @@ def parse_human_size(size_str):
     s = size_str.strip().upper()
     try:
         if s.endswith("GB"):
-            return int(float(s[:-2]) * 1024**3)
+            return int(float(s[:-2]) * 1024 ** 3)
         elif s.endswith("MB"):
-            return int(float(s[:-2]) * 1024**2)
+            return int(float(s[:-2]) * 1024 ** 2)
         elif s.endswith("KB"):
             return int(float(s[:-2]) * 1024)
         elif s.endswith("B"):
@@ -46,17 +52,21 @@ def print_usage():
     print("---------------------")
     print("Usage:")
     print("  COMPRESS:   python cli.py -c <in> <out> [options]")
+    print("    --mode <TYPE>        : Backend: 'native' or '7zip' (Default: Auto)")
     print("    --chunk-size <SIZE>  : Split processing (e.g., '100MB', '1GB')")
     print("    --dict-size <SIZE>   : LZMA Dictionary Size (Default: 128MB)")
     print("    -v / --verify        : Post-creation integrity check")
     print("")
-    print("  DECOMPRESS: python cli.py -d <in> <out>")
-    print("  VERIFY:     python cli.py -v <in>")
+    print("  DECOMPRESS: python cli.py -d <in> <out> [options]")
+    print("    --mode <TYPE>        : Force backend usage (e.g. force 7zip for speed)")
+    print("")
+    print("  VERIFY:     python cli.py -v <in> [options]")
+    print("    --mode <TYPE>        : Force backend usage")
 
 
 # --- COMPRESSION ---
-# CHANGED: Added dict_size parameter
-def do_compress(input_path, output_path, chunk_size=None, dict_size=None, verify=False):
+def do_compress(input_path, output_path, chunk_size=None, dict_size=None, verify=False, use_7zip=False,
+                backend_label=""):
     start_total = time.time()
 
     mode_str = (
@@ -66,13 +76,22 @@ def do_compress(input_path, output_path, chunk_size=None, dict_size=None, verify
     )
     dict_str = format_bytes(dict_size) if dict_size else "Default (128MB)"
 
+    print(f"      Backend:    {backend_label}")
     print(f"      Mode:       {mode_str}")
     print(f"      Dict Size:  {dict_str}")
+
+    if use_7zip:
+        print("      Threading:  MULTITHREAD (Implicit via 7-Zip)")
+    else:
+        print("      Threading:  SINGLE THREAD (Native)")
+
     print("\n[*]    Starting Compression...")
 
     total_input_processed = 0
     total_output_written = 0
     chunk_idx = 0
+
+    backend_type = "7zip" if use_7zip else "native"
 
     try:
         with open(input_path, "rb") as f_in, open(output_path, "wb") as f_out:
@@ -101,9 +120,11 @@ def do_compress(input_path, output_path, chunk_size=None, dict_size=None, verify
                 chunk_crc = zlib.crc32(chunk_data)
 
                 # 2. Compression
-                compressor = CASTCompressor()
-                # CHANGED: Pass dict_size
-                res = compressor.compress(chunk_data, dict_size=dict_size)
+                # Instantiate backend wrapper via Type Alias / Runtime Wrapper
+                backend = CASTLzmaCompressor(backend_type, dict_size)
+                compressor = CASTCompressor(backend)
+
+                res = compressor.compress(chunk_data)
 
                 if isinstance(res, tuple) and len(res) >= 4:
                     c_reg, c_ids, c_vars, id_flag = res[:4]
@@ -156,15 +177,17 @@ def do_compress(input_path, output_path, chunk_size=None, dict_size=None, verify
         print("[*]   Starting Post-Compression Verification...")
         # Technical pause to ensure OS releases the file handle
         time.sleep(0.5)
-        do_verify_standalone(output_path)
+        do_verify_standalone(output_path, use_7zip=use_7zip, backend_label=backend_label)
 
 
 # --- DECOMPRESSION ---
-def do_decompress(input_path, output_path):
+def do_decompress(input_path, output_path, use_7zip=False, backend_label=""):
     start = time.time()
     chunk_idx = 0
+    backend_type = "7zip" if use_7zip else "native"
 
     print("\n[*]    Extracting stream...")
+    print(f"       Backend: {backend_label}")
 
     try:
         with open(input_path, "rb") as f_in, open(output_path, "wb") as f_out:
@@ -196,10 +219,13 @@ def do_decompress(input_path, output_path):
 
                 # Slice buffer
                 c_reg = body_data[0:l_reg]
-                c_ids = body_data[l_reg : l_reg + l_ids]
-                c_vars = body_data[l_reg + l_ids : l_reg + l_ids + l_vars]
+                c_ids = body_data[l_reg: l_reg + l_ids]
+                c_vars = body_data[l_reg + l_ids: l_reg + l_ids + l_vars]
 
-                decompressor = CASTDecompressor()
+                # Decompress using Backend Wrapper
+                backend = CASTLzmaDecompressor(backend_type)
+                decompressor = CASTDecompressor(backend)
+
                 restored = decompressor.decompress(
                     c_reg,
                     c_ids,
@@ -222,11 +248,14 @@ def do_decompress(input_path, output_path):
 
 
 # --- VERIFICATION ---
-def do_verify_standalone(input_path):
+def do_verify_standalone(input_path, use_7zip=False, backend_label=""):
     start = time.time()
     chunk_idx = 0
+    backend_type = "7zip" if use_7zip else "native"
 
     print("\n[*]    Verifying Stream Integrity...")
+    if backend_label:
+        print(f"       Backend: {backend_label}")
 
     try:
         with open(input_path, "rb") as f_in:
@@ -255,11 +284,14 @@ def do_verify_standalone(input_path):
                 print(f"\r       Verifying Chunk #{chunk_idx}... ", end="", flush=True)
 
                 c_reg = body_data[0:l_reg]
-                c_ids = body_data[l_reg : l_reg + l_ids]
-                c_vars = body_data[l_reg + l_ids : l_reg + l_ids + l_vars]
+                c_ids = body_data[l_reg: l_reg + l_ids]
+                c_vars = body_data[l_reg + l_ids: l_reg + l_ids + l_vars]
 
                 try:
-                    decompressor = CASTDecompressor()
+                    # Decompress using Backend Wrapper
+                    backend = CASTLzmaDecompressor(backend_type)
+                    decompressor = CASTDecompressor(backend)
+
                     restored = decompressor.decompress(
                         c_reg,
                         c_ids,
@@ -297,17 +329,32 @@ def do_verify_standalone(input_path):
 if __name__ == "__main__":
     args = sys.argv[1:]
 
+    # [NEW] Check for Help Flag first
+    if "-h" in args or "--help" in args:
+        print_usage()
+        sys.exit(0)
+
+    # Parse Mode
+    mode_arg = "auto"
+    if "--mode" in args:
+        try:
+            idx = args.index("--mode")
+            if idx + 1 < len(args):
+                mode_arg = args[idx + 1].lower()
+                # We remove the arguments to keep cmd_args clean later
+                del args[idx: idx + 2]
+        except ValueError:
+            pass
+
     # 1. Parse Chunk Size
     chunk_size_bytes = None
     if "--chunk-size" in args:
         try:
             idx = args.index("--chunk-size")
-            # Ensure there is a value after the flag
             if idx + 1 < len(args):
                 size_str = args[idx + 1]
                 chunk_size_bytes = parse_human_size(size_str)
-                # Remove flag and value from args so they don't interfere later
-                del args[idx : idx + 2]
+                del args[idx: idx + 2]
             else:
                 print("[!] Error: --chunk-size requires a value (e.g. 100MB)")
                 sys.exit(1)
@@ -322,20 +369,15 @@ if __name__ == "__main__":
             if idx + 1 < len(args):
                 size_str = args[idx + 1]
                 dict_size_bytes = parse_human_size(size_str)
-                # Remove
-                del args[idx : idx + 2]
+                del args[idx: idx + 2]
             else:
                 print("[!] Error: --dict-size requires a value (e.g. 128MB)")
                 sys.exit(1)
         except ValueError:
             pass
 
-    # 3. Parse Multithread (Still unsupported, but remove to prevent errors if passed)
+    # 3. Parse Multithread
     if "--multithread" in args:
-        print(
-            "[*] Note: Multithreading is NOT supported in Python implementation. Running single-threaded."
-        )
-        # Only remove if it exists, to avoid errors
         try:
             args.remove("--multithread")
         except ValueError:
@@ -343,12 +385,40 @@ if __name__ == "__main__":
 
     # 4. Parse Verify Flag
     verify_flag = "-v" in args or "--verify" in args
-    # Remove verify flag from list to identify input/output paths cleanly
     cmd_args = [arg for arg in args if arg not in ["-v", "--verify"]]
 
     if len(cmd_args) < 1:
         print_usage()
         sys.exit(0)
+
+    # --- DETERMINE BACKEND ---
+    use_7zip = False
+    backend_label = "Native (lzma module)"
+
+    if mode_arg == "native":
+        use_7zip = False
+    elif mode_arg == "7zip":
+        path = try_find_7zip_path()
+        if path:
+            use_7zip = True
+            backend_label = f"7-Zip (External) [Found at: {path}]"
+        else:
+            print("[!] CRITICAL ERROR: 7-Zip mode forced but executable not found.")
+            if os.environ.get("SEVEN_ZIP_PATH"):
+                print(f"    SEVEN_ZIP_PATH is set to: {os.environ.get('SEVEN_ZIP_PATH')}")
+            else:
+                print("    Please install 7-Zip or set SEVEN_ZIP_PATH.")
+            sys.exit(1)
+    else:
+        # Auto
+        path = try_find_7zip_path()
+        if path:
+            use_7zip = True
+            print(f"[*] Auto-detected 7-Zip at: {path}")
+            backend_label = f"7-Zip (External) [Found at: {path}]"
+        else:
+            use_7zip = False
+            backend_label = "Native (lzma module) [Fallback]"
 
     mode = cmd_args[0]
 
@@ -376,7 +446,9 @@ if __name__ == "__main__":
             output_file,
             chunk_size=chunk_size_bytes,
             dict_size=dict_size_bytes,
-            verify=verify_flag
+            verify=verify_flag,
+            use_7zip=use_7zip,
+            backend_label=backend_label
         )
 
     elif mode == "-d":
@@ -384,21 +456,19 @@ if __name__ == "__main__":
             print("[!] Missing output path.")
             sys.exit(1)
 
-        do_decompress(cmd_args[1], cmd_args[2])
+        # FIXED: Pass use_7zip and backend_label to do_decompress
+        do_decompress(cmd_args[1], cmd_args[2], use_7zip=use_7zip, backend_label=backend_label)
 
     else:
-        # Fallback: Verification or direct file (assumes verification)
         target_file = mode
-
-        # If user passed only "-v file", cmd_args will only have "file" because we removed -v above.
-        # If user passed only "file", we assume verification.
 
         if verify_flag or os.path.exists(target_file):
             if not os.path.exists(target_file):
                 print(f"[!] Error: File '{target_file}' not found.")
                 sys.exit(1)
 
-            do_verify_standalone(target_file)
+            # FIXED: Pass use_7zip and backend_label to do_verify_standalone
+            do_verify_standalone(target_file, use_7zip=use_7zip, backend_label=backend_label)
         else:
             print(f"[!] Unknown command: {mode}")
             print_usage()
