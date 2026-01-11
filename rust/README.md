@@ -81,17 +81,25 @@ cast -c huge.csv archive.cast --chunk-size 500MB --dict-size 64MB
 ```
 
 ### 2. Decompression
-Automatically detects the format and backend requirements.
+Automatically detects the format. You can use `--mode` to force a specific backend (e.g., to use 7-Zip for faster decompression).
 
 ```bash
+# Auto-detect (Recommended)
 cast -d archive.cast restored.csv
+
+# Force 7-Zip backend (Faster)
+cast -d archive.cast restored.csv --mode 7zip
 ```
 
 ### 3. Verification (Standalone)
-Checks integrity (CRC32 & Structure) without writing to disk.
+Checks integrity (CRC32 & Structure) without writing to disk. You can use --mode to force a specific backend (e.g., to use 7-Zip for faster verification).
 
 ```bash
+# Auto-detect
 cast -v archive.cast
+
+# Force 7-Zip backend (Faster verification)
+cast -v archive.cast --mode 7zip
 ```
 
 ---
