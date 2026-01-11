@@ -2,8 +2,8 @@
 
 > ⚠️ **Disclaimer: Proof of Concept & Performance Focus**
 >
-> Please note that this implementation is intended as a **Scientific Proof of Concept (PoC)**. It is not fully hardened for critical production environments.
->
+> This is an optimized reference implementation designed to demonstrate the full potential of the CAST algorithm. While it delivers production-grade performance and stability (especially in 7-Zip mode), it is a novel technology. Unlike legacy tools (gzip, xz) that have undergone decades of global field-testing, this tool is strictly for experimental use. Use it for archiving and benchmarking, but maintain backups for critical data.
+> 
 > **💡 Key Performance Metric:** The critical metric to observe is the **Simultaneous Enhancement**.
 >
 > On structured datasets CAST often breaks the traditional compression trade-off by delivering a **Dual Advantage**:
