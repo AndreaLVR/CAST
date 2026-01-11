@@ -73,7 +73,7 @@ def load_file_list(list_path: str) -> List[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="CAST Compression Benchmark Tool (Reference)"
+        description="CAST Benchmarking Tool"
     )
 
     # Input: List or Single file

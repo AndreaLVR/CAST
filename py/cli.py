@@ -52,7 +52,7 @@ def print_usage():
     print("---------------------")
     print("Usage:")
     print("  COMPRESS:   python cli.py -c <in> <out> [options]")
-    print("    --mode <TYPE>        : Backend: 'native' or '7zip' (Default: Auto)")
+    print("    --mode <TYPE>        : Backend: 'native' or '7zip' (Default: Auto-detect 7zip, fallback to native)")
     print("    --chunk-size <SIZE>  : Split processing (e.g., '100MB', '1GB')")
     print("    --dict-size <SIZE>   : LZMA Dictionary Size (Default: 128MB)")
     print("    -v / --verify        : Post-creation integrity check")
