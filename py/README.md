@@ -79,17 +79,25 @@ python cli.py -c huge.csv archive.cast --chunk-size 500MB --dict-size 64MB -v
 ```
 
 ### 2. Decompression
-Automatically detects the format and uses the best available backend.
+Automatically detects the format. You can use `--mode` to force a specific backend (e.g., to use 7-Zip for faster decompression).
 
 ```bash
+# Auto-detect (Recommended)
 python cli.py -d archive.cast restored.csv
+
+# Force 7-Zip backend (Faster)
+python cli.py -d archive.cast restored.csv --mode 7zip
 ```
 
 ### 3. Verification (Standalone)
 Checks integrity (CRC32 & Structure) without writing to disk.
 
 ```bash
+# Auto-detect
 python cli.py -v archive.cast
+
+# Force 7-Zip backend (Faster verification)
+python cli.py -v archive.cast --mode 7zip
 ```
 
 ---
