@@ -18,7 +18,7 @@ use cast::cast_lzma::{
     RuntimeLzmaDecompressor,
     CASTLzmaCompressor,
     CASTLzmaDecompressor,
-    try_find_7zip_path, // Importa la funzione helper per il path
+    try_find_7zip_path
 };
 
 // Struct to store results for final ranking
@@ -170,10 +170,19 @@ fn main() {
 
     // --- SUITE INFO ---
     let threads = num_cpus::get();
+
+    let mode_display = if use_7zip {
+        "MULTITHREAD (Implicit via 7-Zip)".to_string()
+    } else if use_multithread {
+        format!("MULTITHREAD ({} threads)", threads)
+    } else {
+        "SOLID (1 thread)".to_string()
+    };
+
     println!("\nBENCHMARK SUITE");
     println!("--------------------------------------------------");
     println!("Backend:            {}", backend_label);
-    println!("Mode:               {}", if use_multithread { format!("MULTITHREAD ({} threads)", threads) } else { "SOLID (1 thread)".to_string() });
+    println!("Mode:               {}", mode_display);
 
     if let Some(cs) = chunk_size_bytes {
         println!("CAST Chunking:      ACTIVE ({} per block)", format_bytes(cs));
