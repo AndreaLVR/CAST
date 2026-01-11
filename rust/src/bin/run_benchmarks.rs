@@ -5,10 +5,8 @@ use std::path::Path;
 use std::time::Instant;
 use crc32fast::Hasher;
 
-// Import Trait (per usare .compress() sul backend)
 use cast::cast::NativeCompressor;
 
-// Import implementazioni specifiche LZMA, 7Zip e Runtime Wrappers
 use cast::cast_lzma::{
     LzmaBackend,
     LzmaDecompressorBackend,
@@ -446,8 +444,6 @@ fn run_competitor_solid(algo: &str, data: &[u8], multithread: bool, dict_size: u
             io::stdout().flush().unwrap();
             let start = Instant::now();
 
-            // MODIFICATO: Usiamo lo stesso backend scelto per CAST per fare il confronto ad armi pari
-            // Se CAST usa 7-Zip, anche il competitor LZMA2 usa 7-Zip.
             let backend = if use_7zip {
                 RuntimeLzmaCompressor::SevenZip(SevenZipBackend::new(dict_size))
             } else {
