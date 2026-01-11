@@ -1,5 +1,4 @@
 import argparse
-import lzma
 import os
 import struct
 import time
