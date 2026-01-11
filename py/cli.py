@@ -58,7 +58,10 @@ def print_usage():
     print("    -v / --verify        : Post-creation integrity check")
     print("")
     print("  DECOMPRESS: python cli.py -d <in> <out> [options]")
+    print("    --mode <TYPE>        : Force backend usage (e.g. force 7zip for speed)")
+    print("")
     print("  VERIFY:     python cli.py -v <in> [options]")
+    print("    --mode <TYPE>        : Force backend usage")
 
 
 # --- COMPRESSION ---
@@ -174,7 +177,7 @@ def do_compress(input_path, output_path, chunk_size=None, dict_size=None, verify
         print("[*]   Starting Post-Compression Verification...")
         # Technical pause to ensure OS releases the file handle
         time.sleep(0.5)
-        do_verify_standalone(output_path, use_7zip)
+        do_verify_standalone(output_path, use_7zip=use_7zip, backend_label=backend_label)
 
 
 # --- DECOMPRESSION ---
@@ -338,6 +341,7 @@ if __name__ == "__main__":
             idx = args.index("--mode")
             if idx + 1 < len(args):
                 mode_arg = args[idx + 1].lower()
+                # We remove the arguments to keep cmd_args clean later
                 del args[idx: idx + 2]
         except ValueError:
             pass
@@ -347,11 +351,9 @@ if __name__ == "__main__":
     if "--chunk-size" in args:
         try:
             idx = args.index("--chunk-size")
-            # Ensure there is a value after the flag
             if idx + 1 < len(args):
                 size_str = args[idx + 1]
                 chunk_size_bytes = parse_human_size(size_str)
-                # Remove flag and value from args so they don't interfere later
                 del args[idx: idx + 2]
             else:
                 print("[!] Error: --chunk-size requires a value (e.g. 100MB)")
@@ -367,7 +369,6 @@ if __name__ == "__main__":
             if idx + 1 < len(args):
                 size_str = args[idx + 1]
                 dict_size_bytes = parse_human_size(size_str)
-                # Remove
                 del args[idx: idx + 2]
             else:
                 print("[!] Error: --dict-size requires a value (e.g. 128MB)")
@@ -375,9 +376,8 @@ if __name__ == "__main__":
         except ValueError:
             pass
 
-    # 3. Parse Multithread (Still unsupported for Native, but remove to prevent errors if passed)
+    # 3. Parse Multithread
     if "--multithread" in args:
-        # Note: We will handle the print message later based on actual backend selected
         try:
             args.remove("--multithread")
         except ValueError:
@@ -385,7 +385,6 @@ if __name__ == "__main__":
 
     # 4. Parse Verify Flag
     verify_flag = "-v" in args or "--verify" in args
-    # Remove verify flag from list to identify input/output paths cleanly
     cmd_args = [arg for arg in args if arg not in ["-v", "--verify"]]
 
     if len(cmd_args) < 1:
@@ -457,20 +456,18 @@ if __name__ == "__main__":
             print("[!] Missing output path.")
             sys.exit(1)
 
+        # FIXED: Pass use_7zip and backend_label to do_decompress
         do_decompress(cmd_args[1], cmd_args[2], use_7zip=use_7zip, backend_label=backend_label)
 
     else:
-        # Fallback: Verification or direct file (assumes verification)
         target_file = mode
-
-        # If user passed only "-v file", cmd_args will only have "file" because we removed -v above.
-        # If user passed only "file", we assume verification.
 
         if verify_flag or os.path.exists(target_file):
             if not os.path.exists(target_file):
                 print(f"[!] Error: File '{target_file}' not found.")
                 sys.exit(1)
 
+            # FIXED: Pass use_7zip and backend_label to do_verify_standalone
             do_verify_standalone(target_file, use_7zip=use_7zip, backend_label=backend_label)
         else:
             print(f"[!] Unknown command: {mode}")
