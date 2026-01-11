@@ -11,7 +11,7 @@
 
 ---
 
-### 📖 [Read the Scientific Paper](./paper/CAST_Paper.pdf)
+### 📖 [Read the Technical Paper](./paper/CAST_Paper.pdf)
 **For more details please refer to the full paper available in this repository.**
 
 ---
