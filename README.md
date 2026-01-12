@@ -52,7 +52,7 @@ It requires **no complex installation** or environment configuration: simply dow
 
 ### ⚡ Current Focus: Archival & Full Restoration
 CAST is currently designed as a stream transformer for **high-efficiency archival**.
-* **Primary Goal:** Balance maximum compression ratio with speed.
+* **Primary Goal:** Maximize storage density for long-term retention, while maintaining practical restoration speeds.
 * **Access Pattern:** **Sequential Access**. The tool is optimized for scenarios where the full file is restored for processing.
 
 ### 🔭 Future Roadmap: Random Access
