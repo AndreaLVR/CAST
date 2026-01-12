@@ -29,7 +29,7 @@ This repository contains the source code and benchmarking tools used to produce 
 ## Key Features
 
 * 🧠 **Schema-less Inference**: Uses an **Optimized Adaptive Parser** to automatically detect repetitive patterns in **arbitrary structured and semi-structured text streams**, operating purely on syntax without relying on file extensions or predefined schemas.
-* 📦 **Enhanced Density**: Reduces structural entropy, enabling **general-purpose compressors** (LZMA2, Zstd, Brotli, etc.) to achieve higher compression ratios.
+* 📦 **Storage & Transmission Optimization**: Reduces payload size by reducing structural entropy. This makes CAST ideal for bandwidth-constrained environments (e.g., Edge-to-Cloud logging), where the cost of CPU cycles is outweighed by the time and cost saved in data transmission.
 * 🚀 **Throughput Efficiency**: For **structured and semi-structured inputs**, the reduced entropy of the columnar streams lowers the backend encoding cost, often resulting in a net reduction of total execution time despite the parsing overhead.
 * 🛠️ **Memory Scalability**: Includes configurable **Stream Chunking** and **Dictionary Size** control, allowing high-ratio compression even on systems with limited RAM.
 * 🛡️ **Robustness**: Includes a **Binary Guard** heuristic to automatically detect and **bypass** non-structured or binary files, preventing processing overhead and ensuring data integrity.
