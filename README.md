@@ -64,7 +64,7 @@ The internal architecture is already **Block-Based**. Future research aims to ev
 
 ## 📊 Benchmarks & Performance Evaluation
 
-> **ℹ️ Note on Backend:** While the CAST algorithm is fundamentally backend-agnostic (compatible with LZMA, Zstd, Brotli, etc.), the implementations provided in this repository are specifically tuned to leverage **LZMA2** as the reference backend to demonstrate maximum compression density (using a **default 128 MB dictionary**).
+> **ℹ️ Note on Backend:** While the CAST algorithm is fundamentally backend-agnostic, the implementations provided here are tuned to leverage **LZMA2 to demonstrate maximum compression density** (using a 128 MB dictionary). **Users prioritizing speed over raw density can pair CAST with faster backends (e.g., Zstd or LZ4), shifting the trade-off towards real-time processing**. However, the benchmarks below focus on the "Deep Archival" use-case where storage efficiency is paramount.
 
 > **⚖️ Note on Dataset Composition:**
 > The dataset selection is **intentionally weighted** towards the algorithm's target domain—structured and semi-structured text streams—to fully explore the optimization potential in relevant scenarios.
