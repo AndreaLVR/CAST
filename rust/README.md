@@ -23,7 +23,7 @@ This unified implementation supports two distinct operating modes (backends) wit
 ## 📥 Quick Start (Download & Run)
 
 **You do NOT need to install Rust or compile anything.**
-Simply download the pre-compiled executables for your operating system from the **[Releases Page](../../releases)**.
+Simply download the pre-compiled executables for your operating system from the **[Releases Page](https://github.com/AndreaLVR/CAST/releases/)**.
 
 The release package includes two executables:
 1.  `cast` (The main compression tool)
