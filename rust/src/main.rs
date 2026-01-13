@@ -93,7 +93,7 @@ fn main() {
 
     let mode_or_file = &clean_args[1];
 
-    println!("\n\n|--    CAST: Columnar Agnostic Structural Transformation    --|\n");
+    println!("\n\n|--    CAST: Columnar Agnostic Structural Transformation (v{})    --|", env!("CARGO_PKG_VERSION"));
     println!("       Author: Andrea Olivari");
     println!("       GitHub: https://github.com/AndreaLVR/CAST\n");
 
@@ -225,7 +225,7 @@ fn format_bytes(n: usize) -> String {
 
 fn print_usage(exe_name: &str) {
     println!(
-        "\nCAST (Columnar Agnostic Structural Transformation) CLI Tool\n\
+        "\nCAST (Columnar Agnostic Structural Transformation) CLI Tool (v{})\n\
         Author: Andrea Olivari\n\
         GitHub: https://github.com/AndreaLVR/CAST\n\n\
         Usage:\n  \
@@ -245,6 +245,7 @@ fn print_usage(exe_name: &str) {
           {} -c data.csv archive.gtf --mode 7zip\n  \
           {} -c large_log.txt archive.gtf --chunk-size 256MB\n  \
           {} -v archive.gtf",
+        env!("CARGO_PKG_VERSION"),
         exe_name, exe_name, exe_name, exe_name
     );
 }
