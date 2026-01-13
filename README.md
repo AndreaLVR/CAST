@@ -164,7 +164,7 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
 * **Goal:** **Algorithmic Readability & Logic Validation.**
 * **Architecture:** Same dual-mode design as Rust (`native` vs `7zip` backends), controllable via CLI args.
 * **Method:** A high-level implementation relying on **Standard Regex** for pattern detection, chosen for code clarity over the zero-copy byte parsing used in Rust.
-* **Role:** Designed as a readable reference for researchers to understand the core decomposition logic. It fully supports **Chunking** and **Dictionary Size configuration** via CLI, ensuring algorithmic parity with the Rust version.
+* **Role:** Designed as a readable reference for researchers to understand the core decomposition logic. It fully supports **Chunking** and **Dictionary Size configuration** via CLI to ensure **format compatibility**, but employs a simplified **in-memory reconstruction model** (unlike the optimized streaming architecture of the Rust engine).
 * **⚠️ Limitation:** Due to the overhead of the regex engine and the interpreter, this version is **not** intended for performance profiling and was **not** used for the official benchmarks presented in the paper.
 
 ---
