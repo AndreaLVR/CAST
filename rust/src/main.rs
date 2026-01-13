@@ -119,7 +119,7 @@ fn main() {
         },
         _ => {
             if let Some(path) = try_find_7zip_path() {
-                println!("[*] Auto-detected 7-Zip at: {}", path);
+                println!("[*]  Auto-detected 7-Zip at: {}", path);
                 (true, format!("7-Zip (External) [Found at: {}]", path))
             } else {
                 (false, "Native (xz2) [Fallback]".to_string())
@@ -150,31 +150,31 @@ fn main() {
                 "SOLID (SINGLE THREAD)"
             };
 
-            println!("\n[*] Starting Compression...");
-            println!("      Input:       {}", input);
-            println!("      Output:      {}", output);
-            println!("      Backend:     {}", backend_label);
-            println!("      Mode:        {}", mode_display);
+            println!("\n[*]  Starting Compression...");
+            println!("       Input:       {}", input);
+            println!("       Output:      {}", output);
+            println!("       Backend:     {}", backend_label);
+            println!("       Mode:        {}", mode_display);
 
             let final_dict = dict_size_bytes.unwrap_or(128 * 1024 * 1024);
-            println!("      Dict Size:   {}", format_bytes(final_dict as usize));
+            println!("       Dict Size:   {}", format_bytes(final_dict as usize));
 
             do_compress(input, output, use_multithread, chunk_size_bytes, final_dict, use_7zip);
 
             if verify_flag {
                 println!("\n------------------------------------------------");
-                println!("[*] Starting Post-Compression Verification...");
+                println!("[*]  Starting Post-Compression Verification...");
                 std::thread::sleep(std::time::Duration::from_millis(500));
                 do_verify_standalone(output, use_7zip);
             }
         },
         "-d" => {
             if clean_args.len() < 4 {
-                eprintln!("[!] Missing output path.");
+                eprintln!("[!]  Missing output path.");
                 print_usage(exe_name);
                 return;
             }
-            println!("\n[*] Starting Decompression...");
+            println!("\n[*]  Starting Decompression...");
             println!("      Backend:     {}", backend_label);
             do_decompress(&clean_args[2], &clean_args[3], use_7zip);
         },
@@ -182,14 +182,14 @@ fn main() {
             if verify_flag || Path::new(mode_or_file).exists() {
                 let input_file = mode_or_file;
                 if !Path::new(input_file).exists() {
-                    eprintln!("[!] Error: File '{}' not found.", input_file);
+                    eprintln!("[!]  Error: File '{}' not found.", input_file);
                     return;
                 }
-                println!("\n[*] Starting Verification...");
-                println!("      Backend:     {}", backend_label);
+                println!("\n[*]  Starting Verification...");
+                println!("       Backend:     {}", backend_label);
                 do_verify_standalone(input_file, use_7zip);
             } else {
-                eprintln!("[!] Unknown command or file not found: {}", mode_or_file);
+                eprintln!("[!]  Unknown command or file not found: {}", mode_or_file);
                 print_usage(exe_name);
             }
         }
@@ -265,7 +265,7 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, chunk_byt
     let mut total_written = 0;
     let mut chunk_count = 0;
 
-    println!("\n[*]    Starting stream processing...");
+    println!("\n[*]  Starting stream processing...");
 
     loop {
         let mut current_read = 0;
@@ -320,7 +320,7 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, chunk_byt
 
     let ratio = if total_written > 0 { total_read as f64 / total_written as f64 } else { 0.0 };
 
-    println!("\n[+]    Compression completed!");
+    println!("\n[+]  Compression completed!");
     println!("       Total Input:    {}", format_bytes(total_read));
     println!("       Total Output:   {}", format_bytes(total_written));
     println!("       Ratio:          {:.2}x", ratio);
@@ -351,7 +351,7 @@ fn do_decompress(input_path: &str, output_path: &str, use_7zip: bool) {
     let decompressor = CASTLzmaDecompressor::new(backend);
     let mut chunk_idx = 0;
 
-    println!("\n[*]    Extracting stream...");
+    println!("\n[*]  Extracting stream...");
 
     loop {
         let mut header = [0u8; 17];
@@ -387,14 +387,14 @@ fn do_decompress(input_path: &str, output_path: &str, use_7zip: bool) {
         match decompressor.decompress(chunk_reg, chunk_ids, chunk_vars, expected_crc, id_flag) {
             Ok(restored) => f_out.write_all(&restored).unwrap(),
             Err(e) => {
-                eprintln!("\n[!]    CRASH: Decompression error at Chunk {}: {}", chunk_idx, e);
+                eprintln!("\n[!]  CRASH: Decompression error at Chunk {}: {}", chunk_idx, e);
                 std::process::exit(1);
             }
         }
     }
 
     if chunk_idx > 0 {
-        println!("\n[+]    Decompression done in {:.2}s", start.elapsed().as_secs_f64());
+        println!("\n[+]  Decompression done in {:.2}s", start.elapsed().as_secs_f64());
     }
 }
 
@@ -415,7 +415,7 @@ fn do_verify_standalone(input_path: &str, use_7zip: bool) {
     let decompressor = CASTLzmaDecompressor::new(backend);
     let mut chunk_idx = 0;
 
-    println!("[*]    Verifying Stream Integrity (RAM Optimized)...");
+    println!("[*]  Verifying Stream Integrity (RAM Optimized)...");
 
     loop {
         let mut header = [0u8; 17];
@@ -448,16 +448,16 @@ fn do_verify_standalone(input_path: &str, use_7zip: bool) {
                 let mut h = Hasher::new();
                 h.update(&restored);
                 if h.finalize() != expected_crc {
-                    println!("\n[!]    FAILURE: CRC Mismatch at Chunk {}!", chunk_idx);
+                    println!("\n[!]   FAILURE: CRC Mismatch at Chunk {}!", chunk_idx);
                     std::process::exit(1);
                 }
             },
             Err(e) => {
-                println!("\n[!]    CRASH: Decompression error at Chunk {}: {}", chunk_idx, e);
+                println!("\n[!]   CRASH: Decompression error at Chunk {}: {}", chunk_idx, e);
                 std::process::exit(1);
             }
         }
     }
 
-    println!("\n[+]    FILE INTEGRITY VERIFIED. Chunks: {}. Time: {:.2}s", chunk_idx, start.elapsed().as_secs_f64());
+    println!("\n[+]  FILE INTEGRITY VERIFIED. Chunks: {}. Time: {:.2}s", chunk_idx, start.elapsed().as_secs_f64());
 }
