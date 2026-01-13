@@ -2,7 +2,7 @@ import lzma
 import os
 import shutil
 import subprocess
-import random
+import tempfile
 import sys
 from typing import Optional
 
@@ -96,61 +96,45 @@ class SevenZipBackend:
         if not data:
             return b""
 
-        # Create temporary files
-        pid = os.getpid()
-        rnd = random.randint(0, 1000000)
-        tmp_in = f"temp_in_{pid}_{rnd}.bin"
-        tmp_out = f"temp_out_{pid}_{rnd}.xz"
+        # MODIFICA: Uso TemporaryDirectory per gestire file e pulizia automatica
+        with tempfile.TemporaryDirectory(prefix="cast_lzma_") as temp_dir:
+            tmp_in = os.path.join(temp_dir, "input.bin")
+            tmp_out = os.path.join(temp_dir, "output.xz")
 
-        try:
-            with open(tmp_in, "wb") as f:
-                f.write(data)
-                f.flush()
-                os.fsync(f.fileno())
+            try:
+                with open(tmp_in, "wb") as f:
+                    f.write(data)
+                    f.flush()
+                    os.fsync(f.fileno())
 
-            # Construct 7z command
-            # -m0=lzma2:d{size}b
-            dict_arg = f"-m0=lzma2:d{self.dict_size}b"
-            cmd_path = get_7z_cmd()
+                # Construct 7z command
+                dict_arg = f"-m0=lzma2:d{self.dict_size}b"
+                cmd_path = get_7z_cmd()
 
-            args = [
-                cmd_path,
-                "a",
-                "-txz",
-                "-mx=9",
-                "-mmt=on",
-                dict_arg,
-                "-y",
-                "-bb0",
-                tmp_out,
-                tmp_in
-            ]
+                args = [
+                    cmd_path,
+                    "a",
+                    "-txz",
+                    "-mx=9",
+                    "-mmt=on",
+                    dict_arg,
+                    "-y",
+                    "-bb0",
+                    tmp_out,
+                    tmp_in
+                ]
 
-            # Execute
-            # Using subprocess.run to be safe and clean
-            subprocess.run(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                # Execute
+                subprocess.run(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
-            with open(tmp_out, "rb") as f:
-                result = f.read()
+                with open(tmp_out, "rb") as f:
+                    result = f.read()
 
-            return result
+                return result
 
-        except subprocess.CalledProcessError as e:
-            # Fallback logic was inside the old class, but here we raise
-            # so the caller knows 7zip failed. Or we could print error.
-            # Following the old logic: "7z Backend failed... Falling back"
-            # But since this is a specific backend class, it should probably fail
-            # and let the runtime wrapper handle fallback or just fail.
-            # For strict adherence to "don't change logic", the old code caught exception
-            # and fell back to lzma.compress.
-            # However, in this architecture, SevenZipBackend is explicit.
-            # I will raise RuntimeError to signal failure.
-            error_msg = e.stderr.decode('utf-8', errors='ignore') if e.stderr else str(e)
-            raise RuntimeError(f"7-Zip Error: {error_msg}")
-        finally:
-            # Cleanup
-            if os.path.exists(tmp_in): os.remove(tmp_in)
-            if os.path.exists(tmp_out): os.remove(tmp_out)
+            except subprocess.CalledProcessError as e:
+                error_msg = e.stderr.decode('utf-8', errors='ignore') if e.stderr else str(e)
+                raise RuntimeError(f"7-Zip Error: {error_msg}")
 
 
 class SevenZipDecompressorBackend:
@@ -158,29 +142,26 @@ class SevenZipDecompressorBackend:
         if not data:
             return b""
 
-        pid = os.getpid()
-        rnd = random.randint(0, 1000000)
-        tmp_in = f"temp_dec_in_{pid}_{rnd}.xz"
+        with tempfile.TemporaryDirectory(prefix="cast_lzma_dec_") as temp_dir:
+            tmp_in = os.path.join(temp_dir, "input.xz")
 
-        try:
-            with open(tmp_in, "wb") as f:
-                f.write(data)
-                f.flush()
-                os.fsync(f.fileno())
+            try:
+                with open(tmp_in, "wb") as f:
+                    f.write(data)
+                    f.flush()
+                    os.fsync(f.fileno())
 
-            cmd_path = get_7z_cmd()
-            args = [cmd_path, "e", tmp_in, "-so", "-y"]
+                cmd_path = get_7z_cmd()
+                # 7-zip writes to stdout (-so)
+                args = [cmd_path, "e", tmp_in, "-so", "-y"]
 
-            # Execute and capture stdout
-            proc = subprocess.run(args, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            return proc.stdout
+                proc = subprocess.run(args, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                return proc.stdout
 
-        except subprocess.CalledProcessError as e:
-            error_msg = e.stderr.decode('utf-8', errors='ignore') if e.stderr else str(e)
-            print(f"Decompression Error: {error_msg}")
-            return b""
-        finally:
-            if os.path.exists(tmp_in): os.remove(tmp_in)
+            except subprocess.CalledProcessError as e:
+                error_msg = e.stderr.decode('utf-8', errors='ignore') if e.stderr else str(e)
+                print(f"Decompression Error: {error_msg}")
+                return b""
 
 
 # ============================================================================
