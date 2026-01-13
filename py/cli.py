@@ -17,6 +17,8 @@ except ImportError as e:
     sys.exit(1)
 
 
+VERSION = "0.1.0"
+
 def format_bytes(n):
     """Formats bytes with commas for readability (e.g. 1,024,000 bytes)."""
     if n is None: return "Default"
@@ -48,7 +50,7 @@ def parse_human_size(size_str):
 
 
 def print_usage():
-    print("\nCAST Compressor CLI (Python Port)")
+    print(f"\nCAST: Columnar Agnostic Structural Transformation CLI (Python Port)  (v{VERSION})")
     print("Author: Andrea Olivari")
     print("GitHub: https://github.com/AndreaLVR/CAST")
     print("---------------------")
@@ -424,7 +426,7 @@ if __name__ == "__main__":
 
     mode = cmd_args[0]
 
-    print("\n\n|--    CAST: Columnar Agnostic Structural Transformation    --|")
+    print(f"\n\n|--    CAST: Columnar Agnostic Structural Transformation (v{VERSION})    --|")
     print("       Author: Andrea Olivari")
     print("       GitHub: https://github.com/AndreaLVR/CAST\n")
 

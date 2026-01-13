@@ -31,6 +31,9 @@ except ImportError:
     exit(1)
 
 
+VERSION = "0.1.0"
+
+
 def format_bytes(n):
     return f"{n:,}"
 
@@ -73,7 +76,7 @@ def load_file_list(list_path: str) -> List[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="CAST Benchmarking Tool"
+        description=f"CAST: Columnar Agnostic Structural Transformation Benchmarking Tool (v{VERSION})"
     )
 
     # Input: List or Single file
@@ -169,7 +172,9 @@ def main() -> None:
         print("[!] No files to test.")
         return
 
-    print(f"\nSTARTING CAST REFERENCE BENCHMARK SUITE")
+    print(f"\nSTARTING CAST PYTHON BENCHMARK SUITE")
+    print("Author: Andrea Olivari")
+    print("GitHub: https://github.com/AndreaLVR/CAST\n")
     print(
         f"Competitors: LZMA={'ON' if RUN_LZMA else 'OFF'}, BROTLI={'ON' if RUN_BROTLI else 'OFF'}, ZSTD={'ON' if RUN_ZSTD else 'OFF'}"
     )
