@@ -350,15 +350,19 @@ fn run_cast_solid_only(data: &[u8], multithread: bool, dict_size: u32, use_7zip:
     };
     let decompressor = CASTLzmaDecompressor::new(decompressor_backend);
 
-    // Handling Result type from decompress
-    let check = std::panic::catch_unwind(|| {
-        decompressor.decompress(&r, &i, &v, expected_crc, flag)
-    });
+    // MODIFICA: Buffer di output pre-allocato
+    let mut output_buffer = Vec::with_capacity(data.len());
 
-    match check {
-        Ok(Ok(res)) => if res == data { println!("OK]"); } else { println!("FAIL - Mismatch]"); },
-        Ok(Err(e)) => println!("ERROR: {}]", e),
-        Err(_) => println!("CRASH]"),
+    // Handling Result type from decompress
+    // Nota: dobbiamo muovere output_buffer dentro o passarlo in modo thread-safe se catch_unwind lo richiede,
+    // ma qui siamo single thread nel benchmark locale solitamente.
+    // Semplificazione senza catch_unwind per chiarezza (o adattalo se vuoi il panic catch):
+
+    match decompressor.decompress(&r, &i, &v, expected_crc, flag, &mut output_buffer) {
+        Ok(_) => {
+            if output_buffer == data { println!("OK]"); } else { println!("FAIL - Mismatch]"); }
+        },
+        Err(e) => println!("ERROR: {}]", e),
     }
 }
 
@@ -417,13 +421,12 @@ fn run_cast_chunked_only(file_path: &str, chunk_size: usize, file_len: usize, mu
         };
         let decompressor = CASTLzmaDecompressor::new(decompressor_backend);
 
-        // Handling Result type
-        let check = std::panic::catch_unwind(|| {
-            decompressor.decompress(&r, &i, &v, expected_crc, flag)
-        });
-        match check {
-            Ok(Ok(restored)) => if restored != chunk_data { verify_ok = false; },
-            Ok(Err(_)) => { verify_ok = false; },
+        let mut restored_chunk = Vec::new(); // Buffer temporaneo
+
+        match decompressor.decompress(&r, &i, &v, expected_crc, flag, &mut restored_chunk) {
+            Ok(_) => {
+                if restored_chunk != chunk_data { verify_ok = false; }
+            },
             Err(_) => { verify_ok = false; }
         }
     }
@@ -561,8 +564,8 @@ fn print_bench_usage(exe_name: &str) {
           --compare-with <algos> Comma-separated list of competitors (e.g. 'lzma2,zstd')\n                         or 'all' for [lzma2, brotli, zstd]\n\n\
         Options:\n  \
           --mode <TYPE>          Backend selection: 'native' or '7zip' (Default: Auto-detect 7zip, fallback to native)\n  \
-          --multithread          Enable multithreading for CAST and competitors\n  \
-          --chunk-size <SIZE>    Run CAST in Chunked Mode (e.g., 512MB, 1GB). Default: Solid Mode\n  \
+          --multithread          Enable multithreading compression for CAST and competitors\n  \
+          --chunk-size <SIZE>    Split input in chunks (Compression RAM Saver) (e.g., 512MB). Default: Solid Mode\n  \
           --dict-size <SIZE>     Set LZMA Dictionary Size (Default: 128MB)\n  \
           -h, --help             Show this help message\n\n\
         Examples:\n  \

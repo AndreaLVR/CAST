@@ -6,7 +6,7 @@
 >
 > While **heavily optimized** (via regex tokenization), Python is inherently limited by the GIL (Global Interpreter Lock).
 > * **For Production/Speed:** Use the [Rust Implementation](../rust).
-> * **For Study/Prototyping:** This version is fully feature-complete and supports the same compression logic.
+> * **For Study/Prototyping:** This version is fully format-compatible but employs a **simplified in-memory reconstruction model** (unlike the Rust engine's streaming architecture).
 >
 > **💡 Key Performance Metric:** Regardless of the language, CAST aims to demonstrate that structural pre-processing can improve both **Density** and **Encoding Speed** simultaneously compared to standard LZMA2.
 
@@ -58,7 +58,7 @@ python cli.py -c <input_file> <output_file> [options]
     * `auto` (Default): Tries to find `7z`. If found, uses it (faster). If not, falls back to `native`.
     * `7zip`: Forces usage of external 7-Zip. Fails if not found.
     * `native`: Forces usage of internal library (single-threaded).
-* `--chunk-size <SIZE>`: **RAM Saver.** Splits input into chunks (e.g., `100MB`, `1GB`). Enables streaming processing for files larger than RAM.
+* `--chunk-size <SIZE>`: **RAM Saver (Input).** Splits input into chunks (e.g., `100MB`, `1GB`) to limit memory usage during compression.
 * `--dict-size <SIZE>`: Sets LZMA Dictionary Size (Default: 128MB).
 * `-v` or `--verify`: **Security Check.** Immediately verifies the archive after creation.
 
@@ -99,6 +99,9 @@ python cli.py -v archive.cast
 # Force 7-Zip backend (Faster verification)
 python cli.py -v archive.cast --mode 7zip
 ```
+
+> **⚠️ Memory Notice:**
+> Unlike the Rust implementation, this Python version performs reconstruction **in-memory**. For restoring multi-gigabyte files on constrained systems, please use the high-performance [Rust Binary](../rust).
 
 ---
 

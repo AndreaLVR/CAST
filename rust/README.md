@@ -9,6 +9,7 @@
 > On structured datasets CAST often breaks the traditional compression trade-off by delivering a **Dual Advantage**:
 > 1. **Superior Density:** It often produces smaller files than standard LZMA2.
 > 2. **Faster Encoding:** It significantly reduces processing time by simplifying the data stream *before* the backend encoder sees it.
+> 3. **Memory Safety:** The Streaming Architecture ensures constant memory usage during decompression, preventing crashes even on low-RAM devices restoring massive archives.
 >
 > **The goal is to demonstrate that structural pre-processing can improve both speed and ratio simultaneously.**
 
@@ -57,7 +58,7 @@ cast -c <input_file> <output_file> [options]
     * `7zip`: Forces usage of external 7-Zip. Fails if not found.
     * `native`: Forces usage of internal library (single-threaded by default).
 * `--multithread`: Enables multi-threading for the **Native** backend. (7-Zip mode is multi-threaded by default).
-* `--chunk-size <SIZE>`: **RAM Saver.** Splits input into chunks (e.g., `100MB`, `1GB`). Critical for files larger than RAM.
+* `--chunk-size <SIZE>`: **RAM Saver (Input).** Splits input into chunks (e.g., `100MB`, `1GB`) to strictly bound memory usage during compression. Critical for files larger than available RAM.
 * `--dict-size <SIZE>`: Sets LZMA Dictionary Size (Default: 128MB).
 * `-v` or `--verify`: **Security Check.** Immediately verifies the archive after creation.
 
@@ -101,6 +102,9 @@ cast -v archive.cast
 # Force 7-Zip backend (Faster verification)
 cast -v archive.cast --mode 7zip
 ```
+
+> **🛡️ Safe Streaming Restoration:**
+> The decompressor automatically uses **Buffered Streaming I/O**. This means you can restore multi-gigabyte files on a machine with very little RAM (e.g., 1GB) without crashing. It never loads the full file into memory.
 
 ---
 
