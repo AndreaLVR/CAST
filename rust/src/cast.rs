@@ -507,10 +507,8 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
         Self { backend }
     }
 
-    // MODIFICA: Streaming Output. Accetta un Writer generico (W) invece di tornare Vec<u8>
     pub fn decompress<W: Write>(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag_raw: u8, output_writer: &mut W) -> Result<(), String> {
 
-        // 1. Setup Bufferizzato per performance
         let mut writer = BufWriter::with_capacity(256 * 1024, output_writer);
         let mut hasher = Hasher::new();
 
@@ -529,11 +527,10 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
         let is_latin1 = (id_flag_raw & 0x80) != 0;
         let id_flag = id_flag_raw & 0x7F;
 
-        // --- DECOMPRESSIONE METADATI (Rimane in RAM, ma sono piccoli) ---
         let is_unified = c_reg.is_empty() && c_ids.is_empty();
         let reg_data_bytes;
         let ids_data_bytes;
-        let vars_data_bytes; // Questo rimane in RAM (limitato dal Trait backend)
+        let vars_data_bytes;
 
         let mut num_rows_single_template_header = 0;
 
@@ -570,7 +567,7 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
         let reg_str = String::from_utf8(reg_data_bytes).map_err(|_| "Registry corrupted (not UTF-8)".to_string())?;
         let skeletons: Vec<&str> = reg_str.split(REG_SEPARATOR).collect();
 
-        // --- RICOSTRUZIONE ID ---
+        // --- ID RECONSTRUNCTION ---
         let mut template_ids = Vec::new();
         if id_flag == 2 {
             for &b in &ids_data_bytes { template_ids.push(b as usize); }
@@ -580,7 +577,7 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
             for ch in ids_data_bytes.chunks_exact(2) { template_ids.push(u16::from_le_bytes(ch.try_into().unwrap()) as usize); }
         }
 
-        // --- PREPARAZIONE OFFSET COLONNE ---
+        // --- PREPARING COLUMNS OFFSET ---
         let col_sep = b"\x02";
         let row_sep = b"\x00";
 
@@ -602,7 +599,7 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
         }
         if start < max_len { raw_columns_offsets.push((start, max_len)); }
 
-        // --- POPOLAZIONE CODE (Queue) ---
+        // --- QUEUE POPULATION ---
         let mut columns_storage: Vec<Vec<VecDeque<(usize, usize)>>> = vec![Vec::new(); skeletons.len()];
         let mut col_iter = raw_columns_offsets.into_iter();
 
@@ -632,8 +629,7 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
 
         let skel_parts_cache: Vec<Vec<&str>> = skeletons.iter().map(|s| s.split(VAR_PLACEHOLDER_STR).collect()).collect();
 
-        // --- PRE-CALCOLO ROW COUNT (FIX CRITICO PER E0502) ---
-        // Calcoliamo questo valore PRIMA di entrare nel loop che prende in prestito mutabile `columns_storage`
+        // --- FIX FOR E0502 ---
         let num_rows_single_template = if id_flag == 3 {
              let mut n = num_rows_single_template_header;
              if n == 0 && !columns_storage.is_empty() && !columns_storage[0].is_empty() {
@@ -642,9 +638,7 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
              n
         } else { 0 };
 
-        // --- MACRO PER SCRITTURA (FIX PER E0499) ---
-        // Usa una macro invece di una closure per evitare che il borrow checker
-        // pensi che `writer` e `hasher` siano catturati per sempre.
+        // --- FIX FOR E0499 ---
         macro_rules! write_stream {
             ($slice:expr) => {
                 writer.write_all($slice).map_err(|e| e.to_string())?;
@@ -652,15 +646,13 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
             }
         }
 
-        // --- RICOSTRUZIONE STREAMING IMPERATIVA ---
-        // Funzione locale che ricostruisce un singolo template ID
+        // --- STREAMING RECONSTRUNCTION ---
         let mut reconstruct_template = |t_id: usize| -> Result<(), String> {
              if t_id >= skel_parts_cache.len() { return Ok(()); }
              let parts = &skel_parts_cache[t_id];
              let queues = &mut columns_storage[t_id];
 
              for (idx, part) in parts.iter().enumerate() {
-                 // 1. Scrivi parte dello scheletro
                  if is_latin1 {
                      for c in part.chars() {
                          let buf = [c as u8];
@@ -670,7 +662,7 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
                      write_stream!(part.as_bytes());
                  }
 
-                 // 2. Scrivi variabile (Unescape + Write diretto)
+                 // 2. (Unescape + Write)
                  if idx < queues.len() {
                      if let Some((s, e)) = queues[idx].pop_front() {
                          let slice = &vars_data_bytes[s..e];
@@ -698,14 +690,12 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
              Ok(())
         };
 
-        // --- LOOP PRINCIPALE ---
         if id_flag == 3 {
             for _ in 0..num_rows_single_template { reconstruct_template(0)?; }
         } else {
             for &t_id in &template_ids { reconstruct_template(t_id)?; }
         }
 
-        // Finalizza
         writer.flush().map_err(|e| e.to_string())?;
         let crc = hasher.finalize();
 
