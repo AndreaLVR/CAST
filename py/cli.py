@@ -49,6 +49,8 @@ def parse_human_size(size_str):
 
 def print_usage():
     print("\nCAST Compressor CLI (Python Port)")
+    print("Author: Andrea Olivari")
+    print("GitHub: https://github.com/AndreaLVR/CAST")
     print("---------------------")
     print("Usage:")
     print("  COMPRESS:   python cli.py -c <in> <out> [options]")
@@ -422,7 +424,9 @@ if __name__ == "__main__":
 
     mode = cmd_args[0]
 
-    print("\n\n|--    CAST: Columnar Agnostic Structural Transformation    --|\n")
+    print("\n\n|--    CAST: Columnar Agnostic Structural Transformation    --|")
+    print("       Author: Andrea Olivari")
+    print("       GitHub: https://github.com/AndreaLVR/CAST\n")
 
     if mode == "-c":
         if len(cmd_args) < 3:
