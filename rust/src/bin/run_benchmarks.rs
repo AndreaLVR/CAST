@@ -118,8 +118,8 @@ fn main() {
     }
 
     println!("\n\n|--    CAST: Columnar Agnostic Structural Transformation (v{})    --|", env!("CARGO_PKG_VERSION"));
-    println!("      Author: Andrea Olivari");
-    println!("      GitHub: https://github.com/AndreaLVR/CAST\n");
+    println!("       Author: Andrea Olivari");
+    println!("       GitHub: https://github.com/AndreaLVR/CAST\n");
 
     // --- DETERMINE BACKEND ---
     let (use_7zip, backend_label) = match preferred_mode.as_str() {
