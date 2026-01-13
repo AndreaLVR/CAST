@@ -94,6 +94,8 @@ fn main() {
     let mode_or_file = &clean_args[1];
 
     println!("\n\n|--    CAST: Columnar Agnostic Structural Transformation    --|\n");
+    println!("       Author: Andrea Olivari");
+    println!("       GitHub: https://github.com/AndreaLVR/CAST\n");
 
     // DETERMINE BACKEND LOGIC
     let (use_7zip, backend_label) = match mode_arg.as_deref() {
@@ -223,7 +225,9 @@ fn format_bytes(n: usize) -> String {
 
 fn print_usage(exe_name: &str) {
     println!(
-        "\nCAST (Columnar Agnostic Structural Transformation) CLI Tool\n\n\
+        "\nCAST (Columnar Agnostic Structural Transformation) CLI Tool\n\
+        Author: Andrea Olivari\n\
+        GitHub: https://github.com/AndreaLVR/CAST\n\n\
         Usage:\n  \
           {} [MODE] [INPUT] [OUTPUT] [OPTIONS]\n\n\
         Modes:\n  \
