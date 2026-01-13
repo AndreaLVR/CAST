@@ -117,7 +117,9 @@ fn main() {
         std::process::exit(1);
     }
 
-    println!("\n\n|--   CAST: Columnar Agnostic Structural Transformation   --|\n");
+    println!("\n\n|--   CAST: Columnar Agnostic Structural Transformation   --|");
+    println!("      Author: Andrea Olivari");
+    println!("      GitHub: https://github.com/AndreaLVR/CAST\n");
 
     // --- DETERMINE BACKEND ---
     let (use_7zip, backend_label) = match preferred_mode.as_str() {
@@ -549,7 +551,9 @@ fn format_num_simple(n: usize) -> String {
 
 fn print_bench_usage(exe_name: &str) {
     println!(
-        "\nCAST Benchmarking Tool\n\n\
+        "\nCAST (Columnar Agnostic Structural Transformation) Benchmarking Tool\n\
+        Author: Andrea Olivari\n\
+        GitHub: https://github.com/AndreaLVR/CAST\n\n\
         Usage:\n  \
           {} --list <LIST> --compare-with <ALGOS> [OPTIONS]\n\n\
         Arguments:\n  \
