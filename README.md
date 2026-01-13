@@ -148,8 +148,7 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
 
 ### 1. 🦀 Rust Implementation (The Benchmark Engine)
 * **Goal:** **High-Performance, Density & Scalability.**
-* **Method:** A performance-oriented **research prototype** featuring a **Zero-Copy Parsing Strategy**, **Multithreading**, and **Stream Chunking** to handle gigabyte-sized files with constant memory footprint.
-* **Unified Architecture:** The engine supports dynamic backend selection via the `--mode` flag:
+* **Method:** A performance-oriented **research prototype** featuring a **Zero-Copy Parsing Strategy**, **Multithreading**, and **Stream Chunking** (compression) paired with **Streaming I/O** (decompression) to handle gigabyte-sized files with a constant memory footprint.* **Unified Architecture:** The engine supports dynamic backend selection via the `--mode` flag:
     * **Native Mode:** Standalone implementation. Used to validate the **Algorithmic Efficiency (Maximum Density)** presented in Table 1.
     * **System Mode (7-Zip):** Invokes the external `7-Zip` CLI. Used to validate **Production Throughput**.
       > **💡 Recommendation:** This is the **preferred variant** for general usage. It achieves drastic speedups with **negligible compression loss** compared to the Native version.
