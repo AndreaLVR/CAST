@@ -117,7 +117,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    println!("\n\n|--   CAST: Columnar Agnostic Structural Transformation   --|");
+    println!("\n\n|--    CAST: Columnar Agnostic Structural Transformation (v{})    --|", env!("CARGO_PKG_VERSION"));
     println!("      Author: Andrea Olivari");
     println!("      GitHub: https://github.com/AndreaLVR/CAST\n");
 
@@ -551,7 +551,7 @@ fn format_num_simple(n: usize) -> String {
 
 fn print_bench_usage(exe_name: &str) {
     println!(
-        "\nCAST (Columnar Agnostic Structural Transformation) Benchmarking Tool\n\
+        "\nCAST (Columnar Agnostic Structural Transformation) Benchmarking Tool (v{})\n\
         Author: Andrea Olivari\n\
         GitHub: https://github.com/AndreaLVR/CAST\n\n\
         Usage:\n  \
@@ -568,6 +568,7 @@ fn print_bench_usage(exe_name: &str) {
         Examples:\n  \
           {} --list datasets.txt --compare-with lzma2 --multithread\n  \
           {} --list big_logs.txt --compare-with all --chunk-size 512MB --dict-size 256MB",
+        env!("CARGO_PKG_VERSION"),
         exe_name, exe_name, exe_name
     );
 }
