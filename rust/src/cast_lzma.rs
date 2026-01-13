@@ -4,8 +4,7 @@ use std::process::Command;
 use std::fs::{self, File};
 use std::path::Path;
 use std::env;
-use rand::Rng;
-
+use tempfile::Builder;
 use xz2::read::XzDecoder;
 use xz2::write::XzEncoder;
 use xz2::stream::{Stream, MtStreamBuilder, Check, LzmaOptions, Filters};
@@ -165,13 +164,13 @@ impl NativeCompressor for SevenZipBackend {
     fn compress(&self, data: &[u8]) -> Vec<u8> {
         if data.is_empty() { return Vec::new(); }
 
-        let pid = std::process::id();
-        let rnd = rand::thread_rng().gen::<u32>();
-        let tmp_in = format!("temp_in_{}_{}.bin", pid, rnd);
-        let tmp_out = format!("temp_out_{}_{}.xz", pid, rnd);
+        let temp_dir = Builder::new()
+            .prefix("cast_lzma_")
+            .tempdir()
+            .expect("Failed to create temp directory");
 
-        let _ = fs::remove_file(&tmp_in);
-        let _ = fs::remove_file(&tmp_out);
+        let tmp_in = temp_dir.path().join("input.bin");
+        let tmp_out = temp_dir.path().join("output.xz");
 
         {
             let mut f = File::create(&tmp_in).expect("Cannot create temp input");
@@ -180,19 +179,18 @@ impl NativeCompressor for SevenZipBackend {
             f.sync_all().unwrap();
         }
 
-        // e.g., "-m0=lzma2:d134217728b" (7-Zip supports 'b' suffix for bytes)
         let dict_arg = format!("-m0=lzma2:d{}b", self.dict_size);
-
         let cmd = get_7z_cmd();
+
         let output = Command::new(&cmd)
-            .args(&["a", "-txz", "-mx=9", "-mmt=on", &dict_arg, "-y", "-bb0", &tmp_out, &tmp_in])
+            .args(&["a", "-txz", "-mx=9", "-mmt=on", &dict_arg, "-y", "-bb0"])
+            .arg(&tmp_out)
+            .arg(&tmp_in)
             .output();
 
         match output {
             Ok(out) => {
                 if !out.status.success() {
-                    let _ = fs::remove_file(&tmp_in);
-                    let _ = fs::remove_file(&tmp_out);
                     panic!("7-Zip Error: {}", String::from_utf8_lossy(&out.stderr));
                 }
             },
@@ -201,8 +199,6 @@ impl NativeCompressor for SevenZipBackend {
 
         let result = fs::read(&tmp_out).unwrap_or_else(|_| Vec::new());
 
-        let _ = fs::remove_file(&tmp_in);
-        let _ = fs::remove_file(&tmp_out);
         result
     }
 }
@@ -212,11 +208,13 @@ pub struct SevenZipDecompressorBackend;
 impl NativeDecompressor for SevenZipDecompressorBackend {
     fn decompress(&self, data: &[u8]) -> Vec<u8> {
         if data.is_empty() { return Vec::new(); }
-        let pid = std::process::id();
-        let rnd = rand::thread_rng().gen::<u32>();
-        let tmp_in = format!("temp_dec_in_{}_{}.xz", pid, rnd);
 
-        let _ = fs::remove_file(&tmp_in);
+        let temp_dir = Builder::new()
+            .prefix("cast_lzma_dec_")
+            .tempdir()
+            .expect("Failed to create temp directory");
+
+        let tmp_in = temp_dir.path().join("input.xz");
 
         {
             let mut f = File::create(&tmp_in).unwrap();
@@ -226,10 +224,10 @@ impl NativeDecompressor for SevenZipDecompressorBackend {
 
         let cmd = get_7z_cmd();
         let output = Command::new(&cmd)
-            .args(&["e", &tmp_in, "-so", "-y"])
+            .args(&["e"])
+            .arg(&tmp_in)
+            .args(&["-so", "-y"])
             .output();
-
-        let _ = fs::remove_file(&tmp_in);
 
         match output {
             Ok(o) => o.stdout,
