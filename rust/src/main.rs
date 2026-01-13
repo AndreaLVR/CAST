@@ -45,7 +45,7 @@ fn main() {
             let val = &args[pos+1];
             chunk_size_bytes = parse_size(val);
             if chunk_size_bytes.is_none() {
-                eprintln!("[!] Error: Invalid chunk size format.");
+                eprintln!("[!]  Error: Invalid chunk size format.");
                 std::process::exit(1);
             }
         }
@@ -130,7 +130,7 @@ fn main() {
     match mode_or_file.as_str() {
         "-c" => {
             if clean_args.len() < 4 {
-                eprintln!("[!] Missing output path.");
+                eprintln!("[!]  Missing output path.");
                 print_usage(exe_name);
                 return;
             }
@@ -138,7 +138,7 @@ fn main() {
             let output = &clean_args[3];
 
             if !Path::new(input).exists() {
-                 eprintln!("[!] Error: Input file '{}' not found.", input);
+                 eprintln!("[!]  Error: Input file '{}' not found.", input);
                  std::process::exit(1);
             }
 
@@ -384,8 +384,8 @@ fn do_decompress(input_path: &str, output_path: &str, use_7zip: bool) {
         let chunk_ids = &body_buffer[l_reg .. l_reg+l_ids];
         let chunk_vars = &body_buffer[l_reg+l_ids .. l_reg+l_ids+l_vars];
 
-        match decompressor.decompress(chunk_reg, chunk_ids, chunk_vars, expected_crc, id_flag) {
-            Ok(restored) => f_out.write_all(&restored).unwrap(),
+        match decompressor.decompress(chunk_reg, chunk_ids, chunk_vars, expected_crc, id_flag, &mut f_out) {
+            Ok(_) => {},
             Err(e) => {
                 eprintln!("\n[!]  CRASH: Decompression error at Chunk {}: {}", chunk_idx, e);
                 std::process::exit(1);
@@ -443,10 +443,12 @@ fn do_verify_standalone(input_path: &str, use_7zip: bool) {
         let chunk_ids = &body_buffer[l_reg .. l_reg+l_ids];
         let chunk_vars = &body_buffer[l_reg+l_ids .. l_reg+l_ids+l_vars];
 
-        match decompressor.decompress(chunk_reg, chunk_ids, chunk_vars, expected_crc, id_flag) {
-            Ok(restored) => {
+        let mut temp_buffer = Vec::new();
+
+        match decompressor.decompress(chunk_reg, chunk_ids, chunk_vars, expected_crc, id_flag, &mut temp_buffer) {
+            Ok(_) => {
                 let mut h = Hasher::new();
-                h.update(&restored);
+                h.update(&temp_buffer); // Ora usiamo il buffer che abbiamo passato
                 if h.finalize() != expected_crc {
                     println!("\n[!]   FAILURE: CRC Mismatch at Chunk {}!", chunk_idx);
                     std::process::exit(1);

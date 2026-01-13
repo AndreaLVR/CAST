@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::borrow::Cow;
+use std::io::{Write, BufWriter};
 use crc32fast::Hasher;
 
 // ============================================================================
@@ -216,11 +217,6 @@ fn parse_line_manual<'a>(line: &'a str, mode: ParsingMode, buffer_vars: &mut Vec
 
 fn decode_python_latin1(data: &[u8]) -> String {
     data.iter().map(|&b| b as char).collect()
-}
-
-fn encode_back_to_latin1(utf8_data: Vec<u8>) -> Vec<u8> {
-    let s = String::from_utf8(utf8_data).expect("CRITICAL: Failed to parse UTF-8 during Latin-1 restoration");
-    s.chars().map(|c| c as u8).collect()
 }
 
 // ============================================================================
@@ -511,19 +507,33 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
         Self { backend }
     }
 
-    pub fn decompress(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag_raw: u8) -> Result<Vec<u8>, String> {
+    // MODIFICA: Streaming Output. Accetta un Writer generico (W) invece di tornare Vec<u8>
+    pub fn decompress<W: Write>(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag_raw: u8, output_writer: &mut W) -> Result<(), String> {
+
+        // 1. Setup Bufferizzato per performance
+        let mut writer = BufWriter::with_capacity(256 * 1024, output_writer);
+        let mut hasher = Hasher::new();
+
+        // --- PASSTHROUGH MODE ---
         if id_flag_raw == 255 {
             let data = self.backend.decompress(c_vars);
-            return Ok(data);
+            hasher.update(&data);
+            writer.write_all(&data).map_err(|e| e.to_string())?;
+
+            let crc = hasher.finalize();
+            if crc != expected_crc { return Err(format!("CRC Check Failed. Expected: {}, Got: {}", expected_crc, crc)); }
+            return Ok(());
         }
 
+        // --- SETUP FLAGS ---
         let is_latin1 = (id_flag_raw & 0x80) != 0;
         let id_flag = id_flag_raw & 0x7F;
 
+        // --- DECOMPRESSIONE METADATI (Rimane in RAM, ma sono piccoli) ---
         let is_unified = c_reg.is_empty() && c_ids.is_empty();
         let reg_data_bytes;
-        let mut ids_data_bytes = Vec::new();
-        let vars_data_bytes;
+        let ids_data_bytes;
+        let vars_data_bytes; // Questo rimane in RAM (limitato dal Trait backend)
 
         let mut num_rows_single_template_header = 0;
 
@@ -531,8 +541,6 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
             let full = self.backend.decompress(c_vars);
             if full.len() < 8 { return Err("Corrupted Archive (Header)".to_string()); }
             let len_reg = u32::from_le_bytes(full[0..4].try_into().unwrap()) as usize;
-
-            // This reads either ID length OR Row Count (depending on mode/content)
             let len_ids_or_rows = u32::from_le_bytes(full[4..8].try_into().unwrap()) as usize;
 
             let mut off = 8;
@@ -545,20 +553,24 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
                 ids_data_bytes = full[off..off+len_ids_or_rows].to_vec();
                 off += len_ids_or_rows;
             } else {
-                // If mode 3, store it potentially as row count
                 num_rows_single_template_header = len_ids_or_rows;
+                ids_data_bytes = Vec::new();
             }
             vars_data_bytes = full[off..].to_vec();
         } else {
             reg_data_bytes = self.backend.decompress(c_reg);
-            if id_flag != 3 { ids_data_bytes = self.backend.decompress(c_ids); }
+            if id_flag != 3 {
+                ids_data_bytes = self.backend.decompress(c_ids);
+            } else {
+                ids_data_bytes = Vec::new();
+            }
             vars_data_bytes = self.backend.decompress(c_vars);
         }
 
         let reg_str = String::from_utf8(reg_data_bytes).map_err(|_| "Registry corrupted (not UTF-8)".to_string())?;
-        // Safe split
         let skeletons: Vec<&str> = reg_str.split(REG_SEPARATOR).collect();
 
+        // --- RICOSTRUZIONE ID ---
         let mut template_ids = Vec::new();
         if id_flag == 2 {
             for &b in &ids_data_bytes { template_ids.push(b as usize); }
@@ -568,7 +580,7 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
             for ch in ids_data_bytes.chunks_exact(2) { template_ids.push(u16::from_le_bytes(ch.try_into().unwrap()) as usize); }
         }
 
-        // DE-SERIALIZATION (ALWAYS ESCAPED)
+        // --- PREPARAZIONE OFFSET COLONNE ---
         let col_sep = b"\x02";
         let row_sep = b"\x00";
 
@@ -577,7 +589,6 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
         let mut i = 0;
         let max_len = vars_data_bytes.len();
 
-        // 1. Scan Column Boundaries
         while i < max_len {
             if vars_data_bytes[i] == 0x01 {
                 i += 2;
@@ -591,6 +602,7 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
         }
         if start < max_len { raw_columns_offsets.push((start, max_len)); }
 
+        // --- POPOLAZIONE CODE (Queue) ---
         let mut columns_storage: Vec<Vec<VecDeque<(usize, usize)>>> = vec![Vec::new(); skeletons.len()];
         let mut col_iter = raw_columns_offsets.into_iter();
 
@@ -599,7 +611,6 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
             for _ in 0..num_vars {
                 if let Some((col_start, col_end)) = col_iter.next() {
                     let mut deque = VecDeque::new();
-                    // 2. Scan Rows
                     let mut curr = col_start;
                     let mut cell_start = curr;
                     while curr < col_end {
@@ -620,64 +631,88 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
         }
 
         let skel_parts_cache: Vec<Vec<&str>> = skeletons.iter().map(|s| s.split(VAR_PLACEHOLDER_STR).collect()).collect();
-        let mut final_blob = Vec::with_capacity(vars_data_bytes.len() + reg_str.len());
 
-        let append_unescaped = |blob: &mut Vec<u8>, slice: &[u8]| {
-            let mut k = 0;
-            while k < slice.len() {
-                if slice[k] == 0x01 && k+1 < slice.len() {
-                    let nb = slice[k+1];
-                    if nb == 0x01 { blob.push(0x01); }
-                    else if nb == 0x00 { blob.push(0x00); }
-                    else if nb == 0x03 { blob.push(0x02); }
-                    k += 2;
-                } else {
-                    blob.push(slice[k]);
-                    k += 1;
-                }
-            }
-        };
-
-        // [FIX SAFE] Hybrid Logic
+        // --- PRE-CALCOLO ROW COUNT (FIX CRITICO PER E0502) ---
+        // Calcoliamo questo valore PRIMA di entrare nel loop che prende in prestito mutabile `columns_storage`
         let num_rows_single_template = if id_flag == 3 {
-             // 1. Try Header (Fix for static files)
              let mut n = num_rows_single_template_header;
-
-             // 2. Fallback (Legacy/Bit-Perfect Benchmark Case)
              if n == 0 && !columns_storage.is_empty() && !columns_storage[0].is_empty() {
                  n = columns_storage[0][0].len();
              }
              n
         } else { 0 };
 
-        let mut reconstruct = |t_id: usize| {
-             // Safe check index
-             if t_id >= skel_parts_cache.len() { return; }
+        // --- MACRO PER SCRITTURA (FIX PER E0499) ---
+        // Usa una macro invece di una closure per evitare che il borrow checker
+        // pensi che `writer` e `hasher` siano catturati per sempre.
+        macro_rules! write_stream {
+            ($slice:expr) => {
+                writer.write_all($slice).map_err(|e| e.to_string())?;
+                hasher.update($slice);
+            }
+        }
 
+        // --- RICOSTRUZIONE STREAMING IMPERATIVA ---
+        // Funzione locale che ricostruisce un singolo template ID
+        let mut reconstruct_template = |t_id: usize| -> Result<(), String> {
+             if t_id >= skel_parts_cache.len() { return Ok(()); }
              let parts = &skel_parts_cache[t_id];
              let queues = &mut columns_storage[t_id];
+
              for (idx, part) in parts.iter().enumerate() {
-                 final_blob.extend_from_slice(part.as_bytes());
+                 // 1. Scrivi parte dello scheletro
+                 if is_latin1 {
+                     for c in part.chars() {
+                         let buf = [c as u8];
+                         write_stream!(&buf);
+                     }
+                 } else {
+                     write_stream!(part.as_bytes());
+                 }
+
+                 // 2. Scrivi variabile (Unescape + Write diretto)
                  if idx < queues.len() {
                      if let Some((s, e)) = queues[idx].pop_front() {
-                         append_unescaped(&mut final_blob, &vars_data_bytes[s..e]);
+                         let slice = &vars_data_bytes[s..e];
+                         let mut k = 0;
+                         while k < slice.len() {
+                            if slice[k] == 0x01 && k+1 < slice.len() {
+                                let nb = slice[k+1];
+                                let byte_to_write = if nb == 0x01 { 0x01 }
+                                else if nb == 0x00 { 0x00 }
+                                else if nb == 0x03 { 0x02 }
+                                else { slice[k] }; // Should not happen
+
+                                let buf = [byte_to_write];
+                                write_stream!(&buf);
+                                k += 2;
+                            } else {
+                                let buf = [slice[k]];
+                                write_stream!(&buf);
+                                k += 1;
+                            }
+                        }
                      }
                  }
              }
+             Ok(())
         };
 
+        // --- LOOP PRINCIPALE ---
         if id_flag == 3 {
-            for _ in 0..num_rows_single_template { reconstruct(0); }
+            for _ in 0..num_rows_single_template { reconstruct_template(0)?; }
         } else {
-            for &t_id in &template_ids { reconstruct(t_id); }
+            for &t_id in &template_ids { reconstruct_template(t_id)?; }
         }
 
-        let final_data = if is_latin1 { encode_back_to_latin1(final_blob) } else { final_blob };
+        // Finalizza
+        writer.flush().map_err(|e| e.to_string())?;
+        let crc = hasher.finalize();
 
-        let mut h = Hasher::new();
-        h.update(&final_data);
-        let crc = h.finalize();
-        if crc != expected_crc { eprintln!("CRC Check Failed. Expected: {}, Got: {}", expected_crc, crc); }
-        Ok(final_data)
+        if crc != expected_crc {
+            return Err(format!("CRC Check Failed. Expected: {}, Got: {}", expected_crc, crc));
+        }
+
+        Ok(())
     }
 }
