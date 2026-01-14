@@ -47,7 +47,7 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 
 ## 📊 Performance Trade-offs (Preliminary)
 
-*Based on initial, non-exhaustive tests performed on a subset of CSV and Log datasets (OpenSSH, PostgreSQL, HDFS, etc.), we observed the following trends compared to the standard "Standard" CAST implementation:*
+*Based on initial, non-exhaustive tests performed on a subset of CSV and Log datasets (OpenSSH, PostgreSQL, HDFS, etc.) using the **System Mode (External 7-Zip backend)**, we observed the following trends compared to the standard "Standard" CAST implementation:*
 
 * **Compression Ratio:** Minimal impact. Most datasets show a **0% to 7% size increase**. Highly dense/massive logs (e.g., HDFS) may see up to ~13% increase due to independent dictionary resets.
 * **Compression Speed:** **Variable Overhead.** While some datasets show negligible difference (or even slight speedups), others exhibit a **15% to 40% increase in compression time**. This is due to the computational cost of managing independent dictionary contexts and repeatedly flushing the stream buffers.
