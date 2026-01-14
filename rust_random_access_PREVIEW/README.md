@@ -1,6 +1,6 @@
 # CAST: Random Access Preview (Experimental WIP)
 
-This directory contains an **experimental evolution** of the CAST algorithm that introduces **Random Access** capabilities via Row Groups and Indexing, similar to formats like Apache Parquet.
+This directory contains a **wip experimental evolution** of the CAST algorithm that introduces **Random Access** capabilities via Row Groups and Indexing, similar to formats like Apache Parquet.
 
 > **Note:** The stable implementation described in the current paper is located in the `../rust_impl` directory. Use this version if you need granular access to data without full decompression.
 
