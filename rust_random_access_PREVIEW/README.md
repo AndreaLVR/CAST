@@ -48,15 +48,18 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 Compared to the standard "Solid" CAST implementation:
 
 * **Compression Ratio:** Slight decrease (**~5-10% larger files**) due to independent dictionary resets for each chunk.
+* **Competitive Edge:** Even with this slight size increase, CAST often maintains a **superior compression ratio** compared to general-purpose competitors (like LZMA2 or Zstd), thanks to the algorithm's high baseline efficiency.
 * **Compression Speed:** Identical. The overhead of flushing blocks is negligible.
 * **Decompression Speed:** Faster (**~20-40% speedup**) on full files due to improved I/O streaming buffering.
 * **Random Access:** **O(1) complexity**. Seeking and extracting a small range is instantaneous (milliseconds), regardless of total file size (GBs or TBs).
+
+> *Specific benchmarks for this version will be published once the implementation stabilizes.*
 
 ---
 
 ## 🛠 Usage
 
-> **ℹ️ General Usage:** The CLI commands are **identical** to the [Standard Rust Implementation](../rust/README.md), with the sole addition of the `--rows` parameter for partial decompression. Please refer to the main README for details on dictionary sizes, modes, and verification flags.
+> **ℹ️ General Usage:** The CLI commands are **identical** to the [Standard Rust Implementation](../rust_impl/README.md), with the sole addition of the `--rows` parameter for partial decompression. Please refer to the main README for details on dictionary sizes, modes, and verification flags.
 
 ### For End Users (No compiling required)
 If you just want to test the tool without installing Rust, you can download the **pre-built beta executable** from the Releases page.
@@ -79,7 +82,7 @@ Use `--chunk-size` to define the granularity. A size of **64MB** or **128MB** is
 ./cast_ra_preview -c data.log archive.cast --chunk-size 64MB -v
 ```
 
-### 2. Random Access 
+### 2. Random Access (The Magic)
 Extract specific rows using human-readable **1-based indexing** (like typical text editors). CAST handles the offset calculation internally.
 
 ```bash
