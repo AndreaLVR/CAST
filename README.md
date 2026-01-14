@@ -43,7 +43,7 @@ It requires **no complex installation** or environment configuration: simply dow
 
 > **👉 Get Started:**
 > Detailed command references are strictly documented in the respective directories to ensure clarity:
-> * **[📂 Rust Implementation](./rust/)** (**Recommended**): Instructions for the high-performance binary.
+> * **[📂 Rust Implementation](./rust/)** (**Stable / Recommended**): Instructions for the high-performance binary.
 > * **[📂 Python Implementation](./py/)**: Instructions for the reference scripts.
 > * **[📂 Random Access Preview](./rust_random_access_PREVIEW/)** (**Experimental WIP**): **A work in progress experimental** evolution introducing Row Groups and O(1) Seeking.
 
