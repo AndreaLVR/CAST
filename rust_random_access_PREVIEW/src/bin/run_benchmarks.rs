@@ -1,12 +1,10 @@
 use std::env;
 use std::fs::File;
-// FIX 1: Aggiunto 'Read' qui sotto
 use std::io::{self, BufRead, BufReader, Cursor, Write, Read};
 use std::path::Path;
 use std::time::Instant;
 use crc32fast::Hasher;
 
-// FIX 2: Importiamo i Trait necessari per chiamare .compress() sui competitor
 use cast::cast::{NativeCompressor};
 
 use cast::cast_lzma::{
@@ -308,7 +306,8 @@ fn run_cast_solid_test(data: &[u8], multithread: bool, dict_size: u32, use_7zip:
     let mut output = Vec::with_capacity(data.len() / 2);
     let mut cursor = Cursor::new(data);
 
-    compressor.compress_stream(&mut cursor, &mut output).expect("Compression failed");
+    // [FIX] Passata closure vuota perché non vogliamo output durante il benchmark
+    compressor.compress_stream(&mut cursor, &mut output, |_,_| {}).expect("Compression failed");
 
     let duration = start.elapsed().as_secs_f64();
     let size = output.len();
@@ -368,7 +367,8 @@ fn run_cast_chunked_test(file_path: &str, chunk_size_bytes: usize, file_len: usi
     let f_in = File::open(file_path).expect("Cannot open file");
     let mut output = Vec::new();
 
-    compressor.compress_stream(f_in, &mut output).expect("Compression failed");
+    // [FIX] Passata closure vuota
+    compressor.compress_stream(f_in, &mut output, |_,_| {}).expect("Compression failed");
 
     let duration = start.elapsed().as_secs_f64();
     let size = output.len();
@@ -441,7 +441,6 @@ fn run_competitor_solid(algo: &str, data: &[u8], multithread: bool, dict_size: u
                 RuntimeLzmaCompressor::Native(LzmaBackend::new(multithread, dict_size))
             };
 
-            // FIX: Ora 'compress' è visibile grazie all'import del Trait
             let c = backend.compress(data);
 
             let duration = start.elapsed().as_secs_f64();
