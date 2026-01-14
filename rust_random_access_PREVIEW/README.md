@@ -1,4 +1,4 @@
-# CAST: Random Access Preview (Experimental)
+# CAST: Random Access Preview (Experimental WIP)
 
 This directory contains an **experimental evolution** of the CAST algorithm that introduces **Random Access** capabilities via Row Groups and Indexing, similar to formats like Apache Parquet.
 
