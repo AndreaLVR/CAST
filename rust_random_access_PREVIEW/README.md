@@ -37,11 +37,13 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 
 ---
 
-## 🚀 Key Features
+## 🚀 Key Features & Limitations
 
 * **Indexed Stream:** The file is split into independent chunks (Row Groups).
 * **Partial Decompression:** Extract specific rows (e.g., rows 25,000-26,000) instantly without processing the whole file.
 * **Binary Guard:** Automatic handling of binary/mixed content (fallback to passthrough mode) per-chunk.
+
+> **🚧 Current Limitation:** The random access mechanism is currently bound to **Row Indexing** (e.g., "Get rows 100 to 200"). Advanced querying capabilities (such as filtering by column value, SQL-like queries, or predicate pushdown) are part of the future roadmap and are not yet implemented in this preview.
 
 ## 📊 Performance Trade-offs (Preliminary)
 
