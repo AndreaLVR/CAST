@@ -50,7 +50,7 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 *Based on initial, non-exhaustive tests performed on a subset of CSV and Log datasets (OpenSSH, PostgreSQL, HDFS, etc.), we observed the following trends compared to the standard "Solid" CAST implementation:*
 
 * **Compression Ratio:** Minimal impact. Most datasets show a **0% to 7% size increase**. Highly dense/massive logs (e.g., HDFS) may see up to ~13% increase due to independent dictionary resets.
-* **Compression Speed:** Almost identical. The overhead of flushing blocks is negligible.
+* **Compression Speed:** **Variable Overhead.** While some datasets show negligible difference (or even slight speedups), others exhibit a **15% to 40% increase in compression time**. This is due to the computational cost of managing independent dictionary contexts and repeatedly flushing the stream buffers.
 * **Decompression Speed (Full File):** Generally faster. We observed a **20% to 35% speedup** on mid-sized datasets (e.g., PostgreSQL, NYC Bus) due to improved I/O chunk buffering. Very large files (>1.5GB) might experience a slight overhead.
 * **Random Access:** **O(1) complexity**. Seeking and extracting a small range is instantaneous (**< 0.5s**), regardless of total file size (GBs or TBs).
 
