@@ -25,3 +25,23 @@ Build the preview version:
 
 ```bash
 cargo build --release
+```
+
+### Compress with Indexing
+Use `--chunk-size` to define the granularity (e.g., 64MB blocks).
+
+```bash
+# Creates an index entry roughly every 64MB of input data
+./target/release/cast_ra_preview -c data.log archive.cast --chunk-size 64MB
+```
+
+### Random Access (The Magic)
+Extract specific rows using 1-based indexing (like typical text editors).
+
+```bash
+# Instantly extracts rows 25,000 to 26,000
+./target/release/cast_ra_preview -d archive.cast extract.txt --rows 25000-26000
+```
+
+---
+*Status: Work in Progress / Feature Preview.*
