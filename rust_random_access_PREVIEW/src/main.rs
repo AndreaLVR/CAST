@@ -97,9 +97,9 @@ fn main() {
     let input_path = if command_idx + 1 < args.len() { &args[command_idx+1] } else { "" };
     let output_path = if command_idx + 2 < args.len() { &args[command_idx+2] } else { "" };
 
-    println!("\n\n|--    CAST: Columnar Agnostic Structural Transformation (v{})    --|", env!("CARGO_PKG_VERSION"));
+    println!("\n\n|--    CAST: Columnar Agnostic Structural Transformation (Random Access *PREVIEW* v{})    --|", env!("CARGO_PKG_VERSION"));
     println!("       Author: Andrea Olivari");
-    println!("       GitHub: https://github.com/AndreaLVR/CAST\n");
+    println!("       GitHub: https://github.com/AndreaLVR/CAST/tree/main/rust_random_access_PREVIEW\n");
 
     let (use_7zip, backend_label) = match mode_arg.as_deref() {
         Some("native") => (false, "Native (xz2)".to_string()),
@@ -214,9 +214,9 @@ fn format_bytes(n: usize) -> String {
 
 fn print_usage(exe_name: &str) {
     println!(
-        "\nCAST (Columnar Agnostic Structural Transformation) CLI Tool (v{})\n\
+        "\nCAST (Columnar Agnostic Structural Transformation) CLI Tool (Random Access *PREVIEW* v{})\n\
         Author: Andrea Olivari\n\
-        GitHub: https://github.com/AndreaLVR/CAST\n\n\
+        GitHub: https://github.com/AndreaLVR/CAST/tree/main/rust_random_access_PREVIEW\n\n\
         Usage:\n  \
           {} [MODE] [INPUT] [OUTPUT] [OPTIONS]\n\n\
         Modes:\n  \
@@ -226,7 +226,7 @@ fn print_usage(exe_name: &str) {
         Options:\n  \
           --mode <TYPE>      Backend selection: 'native' or '7zip'\n                         (Default: Auto-detect 7zip, fallback to native)\n  \
           --multithread      Enable parallel compression for higher speed\n  \
-          --chunk-size <S>   Split input in chunks (e.g., 64MB) to enable Indexing & Random Access.\n                         Default: Solid Mode (Max Compression, No Random Access)\n  \
+          --chunk-size <S>   Split input in chunks (e.g., 64MB) to enable Indexing & Random Access.\n                         Default: Solid Mode (Max Compression, NO INDEX/SEEKING))\n  \
           --dict-size <S>    Set LZMA Dictionary size (Default: 128MB)\n  \
           --rows <S-E>       (Decompression) Extract only specific row range (e.g. 100-200)\n  \
           -v, --verify       (Compression) Run an immediate integrity check\n  \
