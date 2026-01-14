@@ -23,7 +23,7 @@ Instead of blindly cutting files at fixed byte offsets (which would corrupt row 
 Each chunk (or **Row Group**) is a fully self-contained CAST archive:
 * It has its own **Dictionary** (the compressor state is reset for each block).
 * It contains its own locally optimized **Registry (Templates)** and **Variables**.
-* **Trade-off:** This independence allows random access but slightly reduces compression efficiency (~5%) because patterns cannot be referenced across block boundaries.
+* **Trade-off:** This independence allows random access but slightly reduces compression efficiency (~5-10% depending on the case) because patterns cannot be referenced across block boundaries.
 
 ### 3. The Footer Index
 At the end of the file, CAST appends a **Metadata Footer** containing:
