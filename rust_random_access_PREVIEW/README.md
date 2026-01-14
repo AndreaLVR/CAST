@@ -45,7 +45,7 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 
 Compared to the standard "Solid" CAST implementation:
 
-* **Compression Ratio:** Slight decrease (**~5% larger files**) due to independent dictionary resets for each chunk.
+* **Compression Ratio:** Slight decrease (**~5-10% larger files**) due to independent dictionary resets for each chunk.
 * **Compression Speed:** Identical. The overhead of flushing blocks is negligible.
 * **Decompression Speed:** Slightly faster (**~5% faster**) on full files due to improved I/O streaming buffering.
 * **Random Access:** **O(1) complexity**. Seeking and extracting a small range is instantaneous (milliseconds), regardless of total file size (GBs or TBs).
