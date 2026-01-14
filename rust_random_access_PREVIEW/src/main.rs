@@ -1,6 +1,6 @@
 use std::env;
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::time::Instant;
 
@@ -98,6 +98,8 @@ fn main() {
     let output_path = if command_idx + 2 < args.len() { &args[command_idx+2] } else { "" };
 
     println!("\n\n|--    CAST: Columnar Agnostic Structural Transformation (v{})    --|", env!("CARGO_PKG_VERSION"));
+    println!("       Author: Andrea Olivari");
+    println!("       GitHub: https://github.com/AndreaLVR/CAST\n");
 
     let (use_7zip, backend_label) = match mode_arg.as_deref() {
         Some("native") => (false, "Native (xz2)".to_string()),
@@ -115,6 +117,11 @@ fn main() {
 
     match mode_cmd.as_str() {
         "-c" => {
+            if input_path.is_empty() || output_path.is_empty() {
+                eprintln!("[!]  Error: Missing input or output path for compression.");
+                print_usage(exe_name);
+                return;
+            }
             println!("\n[*]  Starting Compression...");
             println!("       Input:       {}", input_path);
             println!("       Output:      {}", output_path);
@@ -124,11 +131,18 @@ fn main() {
             do_compress(input_path, output_path, use_multithread, final_dict, chunk_size_bytes, use_7zip);
 
             if verify_flag {
-                println!("\n[*]  Verifying...");
+                println!("\n------------------------------------------------");
+                println!("[*]  Verifying...");
+                std::thread::sleep(std::time::Duration::from_millis(500));
                 do_verify_stream(output_path, use_7zip);
             }
         },
         "-d" => {
+            if input_path.is_empty() || output_path.is_empty() {
+                eprintln!("[!]  Error: Missing input or output path for decompression.");
+                print_usage(exe_name);
+                return;
+            }
             if let Some((s, e)) = target_rows {
                 println!("\n[*]  Starting Partial Decompression (Rows {}-{})...", s+1, e+1);
             } else {
@@ -139,11 +153,38 @@ fn main() {
         },
         "-v" | "--verify" => {
              let target = if !input_path.is_empty() { input_path } else { &args[2] };
+             if target.is_empty() {
+                 eprintln!("[!] Error: Missing file to verify.");
+                 print_usage(exe_name);
+                 return;
+             }
              println!("\n[*]  Verifying: {}", target);
              do_verify_stream(target, use_7zip);
         }
         _ => print_usage(exe_name),
     }
+}
+
+// [FIX] Nuova funzione smart per stimare la media
+fn estimate_avg_row_size(path: &str) -> usize {
+    let f = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return 200, // Fallback se non apre il file
+    };
+    let reader = io::BufReader::new(f);
+    let mut total_bytes = 0;
+    let mut count = 0;
+
+    // Campiona fino a 1000 righe
+    for line in reader.lines().take(1000) {
+        if let Ok(l) = line {
+            total_bytes += l.len() + 1; // +1 per il newline
+            count += 1;
+        }
+    }
+
+    if count == 0 { return 200; }
+    std::cmp::max(1, total_bytes / count)
 }
 
 fn parse_size(input: &str) -> Option<usize> {
@@ -172,7 +213,32 @@ fn format_bytes(n: usize) -> String {
 }
 
 fn print_usage(exe_name: &str) {
-    println!("Usage: {} -c <in> <out> [OPTIONS]", exe_name);
+    println!(
+        "\nCAST (Columnar Agnostic Structural Transformation) CLI Tool (v{})\n\
+        Author: Andrea Olivari\n\
+        GitHub: https://github.com/AndreaLVR/CAST\n\n\
+        Usage:\n  \
+          {} [MODE] [INPUT] [OUTPUT] [OPTIONS]\n\n\
+        Modes:\n  \
+          -c <in> <out>      Compress input file to CAST format\n  \
+          -d <in> <out>      Decompress CAST file to original format\n  \
+          -v <file>          Verify the integrity of a CAST file\n\n\
+        Options:\n  \
+          --mode <TYPE>      Backend selection: 'native' or '7zip'\n                         (Default: Auto-detect 7zip, fallback to native)\n  \
+          --multithread      Enable parallel compression for higher speed\n  \
+          --chunk-size <S>   Split input in chunks (e.g., 64MB) to enable Indexing & Random Access.\n                         Default: Solid Mode (Max Compression, No Random Access)\n  \
+          --dict-size <S>    Set LZMA Dictionary size (Default: 128MB)\n  \
+          --rows <S-E>       (Decompression) Extract only specific row range (e.g. 100-200)\n  \
+          -v, --verify       (Compression) Run an immediate integrity check\n  \
+          -h, --help         Show this help message\n\n\
+        Examples:\n  \
+          {} -c data.csv archive.cast --mode 7zip\n  \
+          {} -c big.log archive.cast --chunk-size 64MB\n  \
+          {} -d archive.cast partial.log --rows 25000-26000\n  \
+          {} -v archive.cast",
+        env!("CARGO_PKG_VERSION"),
+        exe_name, exe_name, exe_name, exe_name, exe_name
+    );
 }
 
 fn do_compress(input_path: &str, output_path: &str, multithread: bool, dict_size: u32, chunk_bytes: Option<usize>, use_7zip: bool) {
@@ -190,14 +256,26 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, dict_size
     let mut compressor = CASTLzmaCompressor::new(backend);
 
     if let Some(bytes) = chunk_bytes {
-        let estimated_rows = std::cmp::max(100, bytes / 200);
-        println!("       Chunking:    ACTIVE (Target ~{} bytes -> ~{} rows/block)", bytes, estimated_rows);
+        // [FIX] Ora usiamo la stima intelligente basata sul file reale
+        let avg_row_size = estimate_avg_row_size(input_path);
+        let estimated_rows = std::cmp::max(100, bytes / avg_row_size);
+
+        println!("       Chunking:    ACTIVE (Target ~{} bytes)", format_bytes(bytes));
+        println!("                    - Sampled Avg Row Size: {} bytes", avg_row_size);
+        println!("                    - Estimated Rows/Chunk: {}", estimated_rows);
+
         compressor.set_chunk_size(estimated_rows);
     } else {
         println!("       Chunking:    DEFAULT (Solid or ~200k rows)");
     }
 
-    match compressor.compress_stream(f_in, &mut writer) {
+    // Callback per stampare i chunk
+    let result = compressor.compress_stream(f_in, &mut writer, |chunk_idx, bytes_read| {
+        print!("\r       Processing Chunk #{} (Read: {})... ", chunk_idx, format_bytes(bytes_read as usize));
+        std::io::stdout().flush().unwrap();
+    });
+
+    match result {
         Ok((bytes_in, bytes_out)) => {
             let ratio = if bytes_out > 0 { bytes_in as f64 / bytes_out as f64 } else { 0.0 };
             println!("\n[+]  Compression completed!");
@@ -206,7 +284,7 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, dict_size
             println!("       Ratio:          {:.2}x", ratio);
             println!("       Time:           {:.2}s", start_total.elapsed().as_secs_f64());
         },
-        Err(e) => eprintln!("[!]  Error: {}", e),
+        Err(e) => eprintln!("\n[!]  Error: {}", e),
     }
 }
 
