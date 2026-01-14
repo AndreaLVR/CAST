@@ -55,7 +55,9 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 * **Random Access:** **O(1) complexity**. Seeking and extracting a small range is instantaneous (**< 0.5s**), regardless of total file size (GBs or TBs).
 
 ### Visual Benchmarks
-The following charts visualize the preliminary results.
+The following charts visualize the **preliminary results** obtained during this early experimental phase.
+
+> **⚠️ Disclaimer:** These benchmarks are **not exhaustive** and cover only a limited subset of datasets to provide an **initial visual impression** of the performance trade-offs. A comprehensive and rigorous analysis will be published once the random access implementation reaches maturity.
 
 #### 1. Compression Size Comparison
 This chart visualizes the "cost" of indexing. As shown, the size increase is generally minimal, keeping CAST highly competitive against general-purpose compressors.
