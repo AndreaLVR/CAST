@@ -45,6 +45,7 @@ It requires **no complex installation** or environment configuration: simply dow
 > Detailed command references are strictly documented in the respective directories to ensure clarity:
 > * **[📂 Rust Implementation](./rust/)** (**Recommended**): Instructions for the high-performance binary.
 > * **[📂 Python Implementation](./py/)**: Instructions for the reference scripts.
+> * **[📂 Random Access Preview](./rust_ra_preview/)** (**Experimental**): **A work in progress** evolution introducing Row Groups and O(1) Seeking.
 
 ---
 
@@ -55,10 +56,10 @@ CAST is currently designed as a stream transformer for **high-efficiency archiva
 * **Primary Goal:** Maximize storage density for long-term retention, while maintaining practical restoration speeds.
 * **Access Pattern:** **Sequential Access**. The tool is optimized for scenarios where the full file is restored for processing.
 
-### 🔭 Future Roadmap: Random Access
-The internal architecture is inherently **Block-Based**, providing a potential foundation for seekability. Future work intends to **investigate** the feasibility of evolving this into an **Indexed Row Group** format. We aim to assess whether appending a **Footer Index** and enforcing independent block compression can effectively enable efficient Random Access (e.g., "fetch lines 10M-11M") without compromising the primary goal of maximum compression density.
+### 🔭 Research Preview: Random Access
+The internal architecture is inherently **Block-Based**, providing a foundation for seekability. We are actively developing an **Indexed Row Group** format to enable efficient Random Access (e.g., "fetch lines 1000-2000") without compromising the primary goal of compression density.
 
-**This feature is envisioned as an opt-in CLI flag**, allowing users to choose between **Maximum Compression** (default monolithic stream) and **Seekability** depending on their specific requirements.
+> **🚧 Try the Preview:** An **WIP experimental** implementation of this architecture is now available in the **[rust_random_access_PREVIEW](./rust_random_access_PREVIEW/)** directory. It introduces independent block compression and footer indexing to allow O(1) extraction.
 
 ---
 
