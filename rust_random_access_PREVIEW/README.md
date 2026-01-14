@@ -25,7 +25,7 @@ Instead of blindly cutting files at fixed byte offsets (which would corrupt row 
 Each chunk (or **Row Group**) is treated as a fully self-contained CAST archive:
 * It has its own **Dictionary** (the compressor state is reset for each block).
 * It contains its own locally optimized **Registry (Templates)** and **Variables**.
-* **Trade-off:** This independence enables O(1) random access but implies a slight reduction in compression efficiency (~5%) compared to the "Solid Mode", as patterns cannot be referenced across block boundaries.
+* **Trade-off:** This independence enables O(1) random access but implies a slight reduction in compression efficiency (~5-10%) compared to the "Solid Mode", as patterns cannot be referenced across block boundaries.
 
 ### 3. The Footer Index
 At the end of the file, CAST appends a **Metadata Footer** containing:
@@ -49,33 +49,40 @@ Compared to the standard "Solid" CAST implementation:
 
 * **Compression Ratio:** Slight decrease (**~5-10% larger files**) due to independent dictionary resets for each chunk.
 * **Compression Speed:** Identical. The overhead of flushing blocks is negligible.
-* **Decompression Speed:** Slightly faster (**~20-40% faster**) on full files due to improved I/O streaming buffering.
+* **Decompression Speed:** Faster (**~20-40% speedup**) on full files due to improved I/O streaming buffering.
 * **Random Access:** **O(1) complexity**. Seeking and extracting a small range is instantaneous (milliseconds), regardless of total file size (GBs or TBs).
 
 ---
 
 ## 🛠 Usage
 
-Build the preview version:
+### For End Users (No compiling required)
+If you just want to test the tool without installing Rust, you can download the **pre-built beta executable** from the Releases page (look for `cast_ra_preview.exe` or `cast_ra_preview_linux`).
+
+### For Developers (Build from source)
+If you want to modify the code or build it yourself:
 
 ```bash
+cd rust_ra_preview
 cargo build --release
 ```
 
-### Compress with Indexing
+The executable will be located at `target/release/cast_ra_preview`.
+
+### 1. Compress with Indexing
 Use `--chunk-size` to define the granularity. A size of **64MB** or **128MB** is recommended for a good balance between seek speed and compression ratio.
 
 ```bash
 # Creates an index entry roughly every 64MB of input data
-./target/release/cast_ra_preview -c data.log archive.cast --chunk-size 64MB
+./cast_ra_preview -c data.log archive.cast --chunk-size 64MB
 ```
 
-### Random Access (The Magic)
+### 2. Random Access (The Magic)
 Extract specific rows using human-readable **1-based indexing** (like typical text editors). CAST handles the offset calculation internally.
 
 ```bash
 # Instantly extracts rows 25,000 to 26,000
-./target/release/cast_ra_preview -d archive.cast extract.txt --rows 25000-26000
+./cast_ra_preview -d archive.cast extract.txt --rows 25000-26000
 ```
 
 ---
