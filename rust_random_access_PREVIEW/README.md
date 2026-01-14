@@ -2,7 +2,7 @@
 
 This directory contains a **Work-In-Progress (WIP) experimental evolution** of the CAST algorithm. It introduces **Random Access** capabilities via Row Groups and Footer Indexing, moving CAST from a pure archival format (like `.tar.gz`) towards a query-ready storage format (like Apache Parquet).
 
-> **⚠️ Note:** The stable implementation described in the current paper is located in the `../rust_impl` directory. Use this version only if you want to try granular access to data without full decompression.
+> **⚠️ Note:** The stable implementation described in the current paper is located in the `../rust` directory. Use this version only if you want to try granular access to data without full decompression.
 >
 > **Status:** Experimental. Internal structures and API might change. Comprehensive benchmarks and a formal paper update will follow once the format stabilizes.
 
