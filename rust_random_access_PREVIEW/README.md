@@ -2,7 +2,7 @@
 
 This directory contains a **Work-In-Progress (WIP) experimental evolution** of the CAST algorithm. It introduces **Random Access** capabilities via Row Groups and Footer Indexing, moving CAST from a pure archival format (like `.tar.gz`) towards a query-ready storage format (like Apache Parquet).
 
-> **⚠️ Note:** The stable implementation described in the current paper is located in the `../rust` directory. Use this version only if you want to **try** granular access to data without full decompression.
+> **⚠️ Note:** The stable implementation described in the current paper is located in the `../rust_impl` directory. Use this version only if you want to **try** granular access to data without full decompression.
 >
 > **Status:** Experimental. Internal structures and API might change. Comprehensive benchmarks and a formal paper update will follow once the format stabilizes.
 
@@ -25,7 +25,7 @@ Instead of blindly cutting files at fixed byte offsets (which would corrupt row 
 Each chunk (or **Row Group**) is treated as a fully self-contained CAST archive:
 * It has its own **Dictionary** (the compressor state is reset for each block).
 * It contains its own locally optimized **Registry (Templates)** and **Variables**.
-* **Trade-off:** This independence enables O(1) random access but implies a slight reduction in compression efficiency (~5-10%) compared to the "Solid Mode", as patterns cannot be referenced across block boundaries.
+* **Trade-off:** This independence enables O(1) random access but implies a slight reduction in compression efficiency compared to the "Solid Mode", as patterns cannot be referenced across block boundaries.
 
 ### 3. The Footer Index
 At the end of the file, CAST appends a **Metadata Footer** containing:
@@ -47,24 +47,36 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 
 ## 📊 Performance Trade-offs (Preliminary)
 
-Compared to the standard "Solid" CAST implementation:
+*Based on initial, non-exhaustive tests performed on a subset of CSV and Log datasets (OpenSSH, PostgreSQL, HDFS, etc.), we observed the following trends compared to the standard "Solid" CAST implementation:*
 
-* **Compression Ratio:** Slight decrease (**~5-10% larger files**) due to independent dictionary resets for each chunk.
-* **Competitive Edge:** Even with this slight size increase, CAST often maintains a **superior compression ratio** compared to general-purpose competitors (like LZMA2 or Zstd), thanks to the algorithm's high baseline efficiency.
-* **Compression Speed:** Identical. The overhead of flushing blocks is negligible.
-* **Decompression Speed:** Faster (**~20-40% speedup**) on full files due to improved I/O streaming buffering.
-* **Random Access:** **O(1) complexity**. Seeking and extracting a small range is instantaneous (milliseconds), regardless of total file size (GBs or TBs).
+* **Compression Ratio:** Minimal impact. Most datasets show a **0% to 7% size increase**. Highly dense/massive logs (e.g., HDFS) may see up to ~13% increase due to independent dictionary resets.
+* **Compression Speed:** Almost identical. The overhead of flushing blocks is negligible.
+* **Decompression Speed (Full File):** Generally faster. We observed a **20% to 35% speedup** on mid-sized datasets (e.g., PostgreSQL, NYC Bus) due to improved I/O chunk buffering. Very large files (>1.5GB) might experience a slight overhead.
+* **Random Access:** **O(1) complexity**. Seeking and extracting a small range is instantaneous (**< 0.5s**), regardless of total file size (GBs or TBs).
 
-> *Specific benchmarks for this version will be published once the implementation stabilizes.*
+### Visual Benchmarks
+The following charts visualize the preliminary results.
+
+#### 1. Compression Size Comparison
+This chart visualizes the "cost" of indexing. As shown, the size increase is generally minimal, keeping CAST highly competitive against general-purpose compressors.
+
+![Compression Benchmarks](../benchmarks_previews/compression_benchmarks.png)
+
+#### 2. Full Decompression Speed Comparison
+This chart compares the time required to decompress the **entire file**. The block-based architecture often yields faster throughput for mid-sized files.
+
+![Decompression Benchmarks](../benchmarks_previews/decompression_benchmarks.png)
+
+> **⚡ Important:** The chart above refers to *Full Decompression*. If you use the `--rows` parameter to extract specific ranges, **the operation is near-instantaneous** regardless of the file size, as it only processes the relevant chunk.
 
 ---
 
 ## 🛠 Usage
 
-> **ℹ️ General Usage:** The CLI commands are **identical** to the [Standard Rust Implementation](../rust/README.md), with the sole addition of the `--rows` parameter for partial decompression. Please refer to the main README for details on dictionary sizes, modes, and verification flags.
+> **ℹ️ General Usage:** The CLI commands are **identical** to the [Standard Rust Implementation](../rust_impl/README.md), with the sole addition of the `--rows` parameter for partial decompression. Please refer to the main README for details on dictionary sizes, modes, and verification flags.
 
 ### For End Users (No compiling required)
-If you just want to test the tool without installing Rust, you can download the **pre-built beta executable** for your OS from the Releases page.
+If you just want to test the tool without installing Rust, you can download the **pre-built beta executable** from the Releases page.
 
 ### For Developers (Build from source)
 If you want to modify the code or build it yourself:
