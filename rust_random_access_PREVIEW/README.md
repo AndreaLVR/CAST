@@ -1,10 +1,16 @@
 # CAST: Random Access Preview (Experimental WIP)
 
-This directory contains a **Work-In-Progress (WIP) experimental evolution** of the CAST algorithm. It introduces **Random Access** capabilities via Row Groups and Footer Indexing, moving CAST from a pure archival format (like `.tar.gz`) towards a query-ready storage format (like Apache Parquet).
 
-> **⚠️ Note:** The stable implementation described in the current paper is located in the `../rust` directory. Use this version only if you want to **try** granular access to data without full decompression.
+### ⚠️ Early Research Prototype
+
+> **Please Read:**
+> This artifact is a **Work-In-Progress (WIP)** research prototype, released specifically to demonstrate the feasibility of **O(1) Random Access** on column-oriented compressed streams.
 >
-> **Status:** Experimental. Internal structures and API might change. Comprehensive benchmarks and a formal paper update will follow once the format stabilizes.
+> * **State:** Pre-Alpha / Experimental.
+> * **Stability:** The file format specification is **volatile** and subject to breaking changes.
+> * **Compatibility:** Archives created with this version are **NOT** compatible with the [Standard engine](../rust).
+
+> The Standard implementation described in the current paper is located [here](../rust). Use this version only if you want to **try** granular access to data without full decompression.
 
 ---
 
