@@ -1,4 +1,4 @@
-# CAST: Rust Implementation
+# CAST: Rust Implementation (Stable)
 
 > ⚠️ **Disclaimer: Proof of Concept & Performance Focus**
 >
