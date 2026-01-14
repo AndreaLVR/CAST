@@ -57,7 +57,7 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 ### Visual Benchmarks
 The following charts visualize the **preliminary results** obtained during this early experimental phase.
 
-> **⚠️ Disclaimer:** These benchmarks are **not exhaustive** and cover only a limited subset of datasets to provide an **initial visual impression** of the performance trade-offs. A comprehensive and rigorous analysis will be published once the random access implementation reaches maturity.
+> **⚠️ Disclaimer:** These benchmarks are **not exhaustive** and cover only a limited subset of datasets to provide an **initial visual impression** of the performance trade-offs. All tests were executed in **System Mode**. A comprehensive and rigorous analysis will be published once the random access implementation reaches maturity.
 
 #### 1. Compression Size Comparison
 This chart visualizes the "cost" of indexing. As shown, the size increase is generally minimal, keeping CAST highly competitive against general-purpose compressors.
