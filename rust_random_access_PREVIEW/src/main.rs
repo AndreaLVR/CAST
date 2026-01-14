@@ -266,7 +266,7 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, dict_size
 
         compressor.set_chunk_size(estimated_rows);
     } else {
-        println!("       Chunking:    DEFAULT (Solid or ~200k rows)");
+        println!("       Chunking:    DEFAULT (Solid or ~100k rows)");
     }
 
     // Callback per stampare i chunk

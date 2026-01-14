@@ -22,7 +22,7 @@ const VAR_PLACEHOLDER_STR: &str = "\u{E000}";
 const VAR_PLACEHOLDER_QUOTE: &str = "\"\u{E000}\"";
 const REG_SEPARATOR: &str = "\u{E001}";
 const FOOTER_MAGIC: [u8; 5] = [b'C', b'A', b'S', b'T', 0x01];
-const DEFAULT_CHUNK_ROWS: usize = 200_000;
+const DEFAULT_CHUNK_ROWS: usize = 100_000;
 
 #[derive(Clone, Debug)]
 pub struct RowGroupMetadata {
