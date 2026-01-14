@@ -7,7 +7,7 @@
 > This artifact is a **Work-In-Progress (WIP)** research prototype, released specifically to demonstrate the feasibility of **O(1) Random Access** on column-oriented compressed streams.
 >
 > * **State:** Pre-Alpha / Experimental.
-> * **Stability:** The file format specification is **volatile** and subject to breaking changes.
+> * **Stability:** The specifications are **volatile** and subject to breaking changes.
 > * **Compatibility:** Archives created with this version are **NOT** compatible with the [Standard engine](../rust).
 >
 > The Standard implementation described in the current paper is located [here](../rust). Use this version only if you want to **try** granular access to data without full decompression.
