@@ -57,7 +57,7 @@ Compared to the standard "Solid" CAST implementation:
 ## 🛠 Usage
 
 ### For End Users (No compiling required)
-If you just want to test the tool without installing Rust, you can download the **pre-built beta executable** from the Releases page (look for `cast_ra_preview.exe` or `cast_ra_preview_linux`).
+If you just want to test the tool without installing Rust, you can download the **pre-built beta executable** from the Releases page.
 
 ### For Developers (Build from source)
 If you want to modify the code or build it yourself:
