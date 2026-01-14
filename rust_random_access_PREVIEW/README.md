@@ -64,7 +64,7 @@ Compared to the standard "Solid" CAST implementation:
 > **ℹ️ General Usage:** The CLI commands are **identical** to the [Standard Rust Implementation](../rust/README.md), with the sole addition of the `--rows` parameter for partial decompression. Please refer to the main README for details on dictionary sizes, modes, and verification flags.
 
 ### For End Users (No compiling required)
-If you just want to test the tool without installing Rust, you can download the **pre-built beta executable** from the Releases page.
+If you just want to test the tool without installing Rust, you can download the **pre-built beta executable** for your OS from the Releases page.
 
 ### For Developers (Build from source)
 If you want to modify the code or build it yourself:
