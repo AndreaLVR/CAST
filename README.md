@@ -59,7 +59,7 @@ CAST is currently designed as a stream transformer for **high-efficiency archiva
 ### 🔭 Research Preview: Random Access
 The internal architecture is inherently **Block-Based**, providing a foundation for seekability. We are actively developing an **Indexed Row Group** format to enable efficient Random Access (e.g., "fetch lines 1000-2000") without compromising the primary goal of compression density.
 
-> **🚧 Try the Preview:** An **WIP experimental** implementation of this architecture is now available in the **[rust_random_access_PREVIEW](./rust_random_access_PREVIEW/)** directory. It introduces independent block compression and footer indexing to allow O(1) extraction.
+> **🚧 Try the Preview:** A **WIP experimental** implementation of this architecture is now available in the **[rust_random_access_PREVIEW](./rust_random_access_PREVIEW/)** directory. It introduces independent block compression and footer indexing to allow O(1) extraction.
 
 ---
 
