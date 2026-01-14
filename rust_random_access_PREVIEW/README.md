@@ -60,12 +60,12 @@ The following charts visualize the preliminary results.
 #### 1. Compression Size Comparison
 This chart visualizes the "cost" of indexing. As shown, the size increase is generally minimal, keeping CAST highly competitive against general-purpose compressors.
 
-![Compression Benchmarks](../benchmarks_previews/compression_benchmarks.png)
+![Compression Benchmarks](../benchmarks/compression_benchmarks.png)
 
 #### 2. Full Decompression Speed Comparison
 This chart compares the time required to decompress the **entire file**. The block-based architecture often yields faster throughput for mid-sized files.
 
-![Decompression Benchmarks](../benchmarks_previews/decompression_benchmarks.png)
+![Decompression Benchmarks](../benchmarks/decompression_benchmarks.png)
 
 > **⚡ Important:** The chart above refers to *Full Decompression*. If you use the `--rows` parameter to extract specific ranges, **the operation is near-instantaneous** regardless of the file size, as it only processes the relevant chunk.
 
