@@ -1,8 +1,12 @@
 [package]
-name = "cast"
-version = "0.1.0"
+name = "cast_ra_preview"
+version = "0.2.0-beta"
 edition = "2021"
-default-run = "cast"
+authors = ["Andrea Olivari"]
+
+[lib]
+name = "cast"
+path = "src/lib.rs"
 
 [dependencies]
 tempfile = "3"
