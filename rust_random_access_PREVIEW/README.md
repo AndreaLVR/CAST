@@ -10,7 +10,9 @@ This directory contains a **Work-In-Progress (WIP) experimental evolution** of t
 
 ## 🏗️ Architecture: How it Works
 
-Unlike the standard CAST implementation which compresses data as a single continuous stream ("Solid Mode") to maximize compression ratio, this version adopts a **Block-Based Architecture**.
+**Leveraging CAST's inherent block-based design**, this version extends the architecture to support independent seeking.
+
+While the standard "Solid Mode" concatenates processed blocks into a single continuous compression stream (to maximize the dictionary usage and compression ratio), this experimental version creates **Independent Row Groups**.
 
 ### 1. Smart Chunking Strategy
 Instead of blindly cutting files at fixed byte offsets (which would corrupt row structures), CAST RA uses a **Sampling Heuristic**:
@@ -20,10 +22,10 @@ Instead of blindly cutting files at fixed byte offsets (which would corrupt row 
 4.  The stream is then processed and "flushed" every $N$ rows, ensuring cleanly separated blocks.
 
 ### 2. Independent Row Groups
-Each chunk (or **Row Group**) is a fully self-contained CAST archive:
+Each chunk (or **Row Group**) is treated as a fully self-contained CAST archive:
 * It has its own **Dictionary** (the compressor state is reset for each block).
 * It contains its own locally optimized **Registry (Templates)** and **Variables**.
-* **Trade-off:** This independence allows random access but slightly reduces compression efficiency (~5-10% depending on the case) because patterns cannot be referenced across block boundaries.
+* **Trade-off:** This independence enables O(1) random access but implies a slight reduction in compression efficiency (~5%) compared to the "Solid Mode", as patterns cannot be referenced across block boundaries.
 
 ### 3. The Footer Index
 At the end of the file, CAST appends a **Metadata Footer** containing:
