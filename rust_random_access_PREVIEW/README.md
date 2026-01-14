@@ -79,7 +79,7 @@ Use `--chunk-size` to define the granularity. A size of **64MB** or **128MB** is
 ./cast_ra_preview -c data.log archive.cast --chunk-size 64MB -v
 ```
 
-### 2. Random Access (The Magic)
+### 2. Random Access 
 Extract specific rows using human-readable **1-based indexing** (like typical text editors). CAST handles the offset calculation internally.
 
 ```bash
