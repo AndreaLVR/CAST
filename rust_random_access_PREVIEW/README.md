@@ -12,7 +12,7 @@ This directory contains a **Work-In-Progress (WIP) experimental evolution** of t
 
 **Leveraging CAST's inherent block-based design**, this version extends the architecture to support independent seeking.
 
-While the standard "Solid Mode" concatenates processed blocks into a single continuous compression stream (to maximize the dictionary usage and compression ratio), this experimental version creates **Independent Row Groups**.
+While the standard "Standard Mode" concatenates processed blocks into a single continuous compression stream (to maximize the dictionary usage and compression ratio), this experimental version creates **Independent Row Groups**.
 
 ### 1. Smart Chunking Strategy
 Instead of blindly cutting files at fixed byte offsets (which would corrupt row structures), CAST RA uses a **Sampling Heuristic**:
@@ -25,7 +25,7 @@ Instead of blindly cutting files at fixed byte offsets (which would corrupt row 
 Each chunk (or **Row Group**) is treated as a fully self-contained CAST archive:
 * It has its own **Dictionary** (the compressor state is reset for each block).
 * It contains its own locally optimized **Registry (Templates)** and **Variables**.
-* **Trade-off:** This independence enables O(1) random access but implies a slight reduction in compression efficiency compared to the "Solid Mode", as patterns cannot be referenced across block boundaries.
+* **Trade-off:** This independence enables O(1) random access but implies a slight reduction in compression efficiency compared to the "Standard Mode", as patterns cannot be referenced across block boundaries.
 
 ### 3. The Footer Index
 At the end of the file, CAST appends a **Metadata Footer** containing:
@@ -47,7 +47,7 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 
 ## 📊 Performance Trade-offs (Preliminary)
 
-*Based on initial, non-exhaustive tests performed on a subset of CSV and Log datasets (OpenSSH, PostgreSQL, HDFS, etc.), we observed the following trends compared to the standard "Solid" CAST implementation:*
+*Based on initial, non-exhaustive tests performed on a subset of CSV and Log datasets (OpenSSH, PostgreSQL, HDFS, etc.), we observed the following trends compared to the standard "Standard" CAST implementation:*
 
 * **Compression Ratio:** Minimal impact. Most datasets show a **0% to 7% size increase**. Highly dense/massive logs (e.g., HDFS) may see up to ~13% increase due to independent dictionary resets.
 * **Compression Speed:** **Variable Overhead.** While some datasets show negligible difference (or even slight speedups), others exhibit a **15% to 40% increase in compression time**. This is due to the computational cost of managing independent dictionary contexts and repeatedly flushing the stream buffers.
