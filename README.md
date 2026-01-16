@@ -43,7 +43,7 @@ CAST is designed to function as a **straightforward Command Line Interface (CLI)
 It requires **no installation** or environment configuration: **simply download and run**.
 
 ### 📥 [Download Latest Release](https://github.com/AndreaLVR/CAST/releases)
-*(Binaries available for Windows .exe, Linux, and macOS)*
+*(Binaries available for Windows, Linux, and macOS)*
 
 > **👉 Get Started:**
 > Detailed command references are strictly documented in the respective directories to ensure clarity:
