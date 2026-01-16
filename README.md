@@ -18,9 +18,12 @@
 
 ## 🔬 Overview
 
-**CAST** is a structural pre-processor designed to demonstrate the potential of columnar reorganization on general-purpose compression pipelines (such as LZMA2, Zstd, and Brotli).
+**CAST** is a structural pre-processor **currently** optimized for **Deep Archival and Cold Storage**, but architecturally designed to evolve into a **Random Access** system. It's designed to demonstrate the potential of columnar reorganization on general-purpose compression pipelines (such as LZMA2, Zstd, and Brotli).
 
-Standard stream compressors rely on finite "look-back" windows (dictionaries), which limits their ability to detect redundancy in verbose, row-oriented formats like CSV, Logs, or JSON. CAST parses the input structure globally, separating the syntax (**Skeleton**) from the values (**Variables**), and reorganizes the data into contiguous columnar streams before passing them to the backend compressor.
+Standard stream compressors rely on finite "look-back" windows (dictionaries), limiting their ability to detect redundancy in verbose formats like CSV or Logs. CAST parses the input globally, separating syntax (**Skeleton**) from values (**Variables**), and reorganizes them into contiguous columnar streams.
+
+* **Current State (Archival):** By maximizing data locality, CAST enables general-purpose compressors (LZMA2, Zstd) to achieve extreme compression ratios, ideal for long-term data retention.
+* **Architectural Potential (Random Access):** Unlike solid archives (e.g., `tar.gz`), CAST's internal design is inherently **Block-Based**. This structure lays the foundation for future **O(1) Indexed Random Access**, enabling efficient partial retrieval without full decompression.
 
 This repository contains the source code and benchmarking tools used to produce the experimental results detailed in the accompanying paper.
 
