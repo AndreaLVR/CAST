@@ -42,18 +42,17 @@ This repository contains the source code and benchmarking tools used to produce 
 CAST is designed to function as a **straightforward Command Line Interface (CLI)**, offering a drop-in user experience similar to standard utilities like `gzip`, `tar`, or `7z`.
 It requires **no installation** or environment configuration: **simply download and run**.
 
-### 📥 [Download Latest Release]([https://github.com/AndreaLVR/CAST/releases](https://github.com/AndreaLVR/CAST/releases/tag/1.0.0))
+### 📥 [Download Latest Release](https://github.com/AndreaLVR/CAST/releases/tag/1.0.0)
 *(Binaries built from the **Rust Implementation** for Windows, Linux, and macOS)*
 
 > **🧪 Experimental:** Looking for the **Random Access Prototype**?
-> A pre-compiled **Beta Release** of the O(1) seeking engine is also available [here]([https://github.com/AndreaLVR/CAST/releases](https://github.com/AndreaLVR/CAST/releases/tag/0.2.0-beta)) (look for files tagged `preview`).
+> A pre-compiled **Beta Release** of the O(1) seeking engine is also available [here](https://github.com/AndreaLVR/CAST/releases/tag/0.2.0-beta) (look for files tagged `preview`).
 
 > **👉 Get Started:**
 > Detailed command references are strictly documented in the respective directories to ensure clarity:
 > * **[📂 Rust Implementation](./rust/)** (**Recommended**): Instructions for the official high-performance binaries.
 > * **[📂 Python Implementation](./py/)** (**Educational Reference**): An implementation provided **solely for logic validation and research**.
 > * **[📂 Random Access Preview](./rust_random_access_PREVIEW/)** (**Work In Progress**): Documentation for the Experimental Prototype (Row Groups & O(1) Seeking).
-
 ---
 
 ## 🔮 Current Scope & Future Direction
