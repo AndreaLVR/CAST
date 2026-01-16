@@ -106,7 +106,7 @@ The table below compares **CAST (Rust Native)** against state-of-the-art compres
 > *Figure 2: Throughput Analysis (Native Mode). Even in single-threaded mode, CAST (Blue) achieves significantly higher throughput on CSVs and structured/semi-structured logs due to the reduced input size passed to the backend. On unstructured/high entropy text (ChatGPT, Tweets), the parsing overhead aligns performance with standard compressors.*
 
 <details>
-<summary><strong>🔍 Click to expand full Data Table (Benchmark Numbers)</strong></summary>
+<summary><strong>🔍 CLICK TO EXPAND THE FULL BENCHMARKS TABLE</strong></summary>
 <br>
 <img src="paper/images/rust_native_benchmarks.png" alt="Compression Ratio Benchmarks" width="100%">
 <br>
