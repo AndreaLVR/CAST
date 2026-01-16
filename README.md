@@ -33,7 +33,7 @@ This repository contains the source code and benchmarking tools used to produce 
 * 🚀 **Throughput Efficiency**: For **structured and semi-structured inputs**, the reduced entropy of the columnar streams lowers the backend encoding cost, often resulting in a net reduction of total execution time despite the parsing overhead.
 * 🛠️ **Memory Scalability & Safety**: Features a fully **Streaming Decompressor** that ensures **constant memory footprint** during restoration, effectively immune to OOM crashes regardless of file size. Includes configurable **Stream Chunking** and **Dictionary Size** control for compression on constrained systems.
 * 🛡️ **Robustness**: Includes a **Binary Guard** heuristic to automatically detect and **bypass** non-structured or binary files, preventing processing overhead and ensuring data integrity.
-* 🔭 **Random Access Architecture [EXPERIMENTAL PREVIEW]**: The engine features a foundation for seekability. We have **just started investigation and development** on an **early research prototype** to demonstrate **O(1) Indexed Random Access** (Row Groups). This is a strictly experimental proof-of-concept intended solely for architectural validation.
+* 🔭 **Random Access Architecture [EXPERIMENTAL PREVIEW]**: The internal architecture is inherently **Block-Based**, providing a foundation for seekability. We have **just started investigation and development** on an **Indexed Row Group** format to enable efficient Random Access (e.g., "fetch lines 1000-2000") without compromising the primary goal of compression density. This is currently a strictly experimental proof-of-concept.
 
 ---
 
@@ -48,7 +48,7 @@ It requires **no installation** or environment configuration: **simply download 
 > **🧪 Experimental:** Looking for the **Random Access Prototype**?
 > A pre-compiled **Alpha Build** of the O(1) seeking engine is available [here](https://github.com/AndreaLVR/CAST/releases/tag/0.2.0-beta) (look for files tagged `preview`).
 > **⚠️ Note:** **Investigation and development** on this feature have **just started**. This is a raw **Proof-of-Concept** released solely to demonstrate the feasibility of the Row Group architecture. It is NOT feature-complete.
-
+> 
 > **👉 Get Started:**
 > Detailed command references are strictly documented in the respective directories to ensure clarity:
 > * **[📂 Rust Implementation](./rust/)** (**Recommended**): Instructions for the official high-performance binaries.
