@@ -69,11 +69,11 @@ It requires **no installation** or environment configuration: **simply download 
 > The dataset selection is **intentionally weighted** towards the algorithm's target domain—structured and semi-structured text streams—to fully explore the optimization potential in relevant scenarios.
 > However, to define the algorithm's operational boundaries, we also included a small control group representing **low-redundancy scenarios** (including unstructured text and high-variance structured files). This verifies that CAST's benefits are strictly dependent on *exploitable* structural redundancy.
 
-To provide a comprehensive evaluation, this project features **two distinct implementations (Rust & Python)**, both supporting dual operating modes via the `--mode` flag:
+To provide a comprehensive evaluation, all official benchmarks were conducted using the **🦀 Rust Performance Engine**.
+The engine supports dual operating configurations, controllable via the `--mode` CLI argument:
 
-1.  **🦀 Rust Performance Engine:** The core implementation used for **ALL official benchmarks**.
-    * *Native Mode:* Standalone, dependency-free. Used to measure **Algorithmic Efficiency (Compression Ratio)** without external overhead.
-    * *System Mode (7-Zip Backend):* Pipes data to the external 7-Zip executable (LZMA2). Used to demonstrate **Production Throughput** and scalability in real-world pipelines. This configuration achieves **significantly higher speeds** with **negligible compression loss** compared to the Native version.
+1. **Native Mode** (`--mode native`): Standalone, dependency-free. Used to measure **Algorithmic Efficiency (Compression Ratio)** without external overhead.
+2. **System Mode** (`--mode 7zip`): Feeds data to the external 7-Zip executable (LZMA2). Used to demonstrate **Production Throughput** and scalability in real-world pipelines. This configuration achieves **significantly higher speeds** with **negligible compression loss** compared to the Native version.
 
 > 📂 **Data Sources:** Benchmarks were performed on real-world datasets sourced from Kaggle and Open Data repositories. For a full list of source URLs and descriptions, please refer to [DATASETS.md](./DATASETS.md).
 
