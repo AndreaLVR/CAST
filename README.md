@@ -97,7 +97,7 @@ The table below compares **CAST (Rust Native)** against state-of-the-art compres
 >
 > *Please refer to the full paper for detailed configuration parameters.*
 
-![Compression Ratio Benchmarks](paper/rust_native_benchmarks.png)
+![Compression Ratio Benchmarks](paper/images/rust_native_benchmarks.png)
 
 > *(See `paper/CAST_Paper.pdf` for high-resolution data)*
 
@@ -108,7 +108,7 @@ Here we measure the real-world "Time-to-Compression" trade-off.
 
 **Key Finding:** Contrary to the expectation that pre-processing adds latency, CAST is often **faster** than running standard compression directly on structured and semi-structured datasets. The entropy reduction allows the backend encoder to process the stream so efficiently that the **time saved during encoding outweighs the parsing overhead**.
 
-![Rust Performance Benchmarks](paper/rust_system_benchmarks.png)
+![Rust Performance Benchmarks](paper/images/rust_system_benchmarks.png)
 
 > *(See `paper/CAST_Paper.pdf` for high-resolution data)*
 
@@ -119,7 +119,7 @@ Decompression involves decoding the columnar streams and re-assembling the origi
 
 **Observation:** The reconstruction phase is strictly linear ($O(N)$). The engine utilizes **buffered streaming I/O** to maximize throughput while maintaining a **minimal, constant RAM profile**, ensuring stability even when restoring multi-gigabyte files on low-memory hardware.
 
-![Decompression Benchmarks](paper/decompression_benchmarks.png)
+![Decompression Benchmarks](paper/images/decompression_benchmarks.png)
 
 > *(See `paper/CAST_Paper.pdf` for high-resolution data)*
 
