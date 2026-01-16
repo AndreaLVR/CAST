@@ -98,7 +98,7 @@ The table below compares **CAST (Rust Native)** against state-of-the-art compres
 > *Please refer to the full paper for detailed configuration parameters.*
 
 ![Algorithmic Efficiency Chart](paper/images/native_comp_ratio_figure1.png)
-> *Figure 1: Compression Ratio comparison on a representative selection of datasets. CAST (Blue) dominates on structured data.*
+> *Figure 1: Comparison of compression ratios on a comprehensive selection of datasets (sorted by CAST performance). CAST (Blue) shows dominant performance on structured/semi-structured data, doubling or tripling competitor density. The inclusion of unstructured/high entropy text (e.g., Elect. Tweets) demonstrates the natural boundary where structural pre-processing becomes neutral or slightly disadvantageous.*
 > 
 ![Compression Ratio Benchmarks](paper/images/rust_native_benchmarks.png)
 
