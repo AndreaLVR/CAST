@@ -122,7 +122,7 @@ Here we measure the real-world "Time-to-Compression" trade-off.
 **Key Finding:** Contrary to the expectation that pre-processing adds latency, CAST is often **faster** than running standard compression directly on structured and semi-structured datasets. The entropy reduction allows the backend encoder to process the stream so efficiently that the **time saved during encoding outweighs the parsing overhead**.
 
 ![System Mode Combo Chart](paper/images/system_throughput_figure1.png)
-> *Figure 3: System Mode Analysis. This combined view demonstrates the direct causal link between structural compression and throughput. As the CAST Compression Ratio (Green Line) rises above the baseline, the processing speed (Blue Bars) increases proportionally. The "White Halo" labels indicate the specific compression ratio achieved by CAST.*
+> *Figure 3: System Mode Analysis. The chart reveals a strong positive correlation between compression efficiency (Green Line) and processing throughput (Blue Bars). In most cases, higher structural redundancy translates directly into faster encoding.*
 
 <details>
 <summary><strong>🔍 CLICK TO EXPAND THE FULL BENCHMARKS TABLE</strong></summary>
