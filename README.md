@@ -53,7 +53,7 @@ It requires **no installation** or environment configuration: **simply download 
 > Detailed command references are strictly documented in the respective directories to ensure clarity:
 > * **[📂 Rust Implementation](./rust/)** (**Recommended**): Instructions for the official high-performance binaries.
 > * **[📂 Python Implementation](./py/)** (**Educational Reference**): An implementation provided **solely for logic validation and research**.
-> * **[📂 Random Access Preview](./rust_random_access_PREVIEW/)** (**Work In Progress**): Documentation for the Experimental Prototype (Row Groups & O(1) Seeking).
+> * **[📂 Random Access Preview](./rust_random_access_PREVIEW/)** (**Investigation & Development**): Documentation for the Early Prototype (Row Groups & O(1) Seeking).
 ---
 
 ## 🔮 Current Scope & Future Direction
