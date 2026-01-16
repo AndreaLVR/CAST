@@ -97,7 +97,7 @@ The table below compares **CAST (Rust Native)** against state-of-the-art compres
 >
 > *Please refer to the full paper for detailed configuration parameters.*
 
-![Algorithmic Efficiency Chart](paper/images/native_comp_ratio_figure.png)
+![Algorithmic Efficiency Chart](paper/images/native_comp_ratio_figure1.png)
 > *Figure 1: Compression Ratio comparison on a representative selection of datasets. CAST (Blue) dominates on structured data.*
 > 
 ![Compression Ratio Benchmarks](paper/images/rust_native_benchmarks.png)
