@@ -33,13 +33,17 @@ This repository contains the source code and benchmarking tools used to produce 
 * 🚀 **Throughput Efficiency**: For **structured and semi-structured inputs**, the reduced entropy of the columnar streams lowers the backend encoding cost, often resulting in a net reduction of total execution time despite the parsing overhead.
 * 🛠️ **Memory Scalability & Safety**: Features a fully **Streaming Decompressor** that ensures **constant memory footprint** during restoration, effectively immune to OOM crashes regardless of file size. Includes configurable **Stream Chunking** and **Dictionary Size** control for compression on constrained systems.
 * 🛡️ **Robustness**: Includes a **Binary Guard** heuristic to automatically detect and **bypass** non-structured or binary files, preventing processing overhead and ensuring data integrity.
+* 🔭 **Random Access Architecture [PREVIEW]**: While the current release focuses on archival, a early research WIP prototype for **O(1) Indexed Random Access** (Row Groups) is available for testing, paving the way for efficient partial extraction without full decompression.
 
 ---
 
-## 🚀 Usage: A Familiar CLI Experience
+## 🚀 Usage: A Familiar CLI Experience - Zero Setup
 
 CAST is designed to function as a **straightforward Command Line Interface (CLI)**, offering a drop-in user experience similar to standard utilities like `gzip`, `tar`, or `7z`.
-It requires **no complex installation** or environment configuration: simply download and run.
+It requires **no installation** or environment configuration: **simply download and run**.
+
+### 📥 [Download Latest Release](https://github.com/AndreaLVR/CAST/releases)
+*(Binaries available for Windows .exe, Linux, and macOS)*
 
 > **👉 Get Started:**
 > Detailed command references are strictly documented in the respective directories to ensure clarity:
