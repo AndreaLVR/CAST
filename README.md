@@ -99,7 +99,12 @@ The table below compares **CAST (Rust Native)** against state-of-the-art compres
 
 ![Algorithmic Efficiency Chart](paper/images/native_comp_ratio_figure1.png)
 > *Figure 1: Comparison of compression ratios on a comprehensive and significant selection of datasets (sorted by CAST performance). CAST (Blue) shows dominant performance on structured/semi-structured data, doubling or tripling competitor density. The inclusion of unstructured/high entropy text (e.g., Elect. Tweets) demonstrates the natural boundary where structural pre-processing becomes neutral or slightly disadvantageous.*
->
+
+<br>
+
+![Native Throughput Chart](paper/images/native_throughput_figure1.png)
+> *Figure 2: Throughput Analysis (Native Mode). Even in single-threaded mode, CAST (Blue) achieves significantly higher throughput on CSVs and structured/semi-structured logs due to the reduced input size passed to the backend. On unstructured/high entropy text (ChatGPT, Tweets), the parsing overhead aligns performance with standard compressors.*
+
 <details>
 <summary><strong>🔍 Click to expand full Data Table (Benchmark Numbers)</strong></summary>
 <br>
