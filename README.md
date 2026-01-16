@@ -46,7 +46,7 @@ It requires **no installation** or environment configuration: **simply download 
 *(Binaries built from the **Rust Implementation** for Windows, Linux, and macOS)*
 
 > **🧪 Experimental:** Looking for the **Random Access Prototype**?
-> A pre-compiled **Beta Release** of the O(1) seeking engine is also available in the [Releases page](https://github.com/AndreaLVR/CAST/releases) (look for files tagged `preview`).
+> A pre-compiled **Beta Release** of the O(1) seeking engine is also available [here]([https://github.com/AndreaLVR/CAST/releases](https://github.com/AndreaLVR/CAST/releases/tag/0.2.0-beta)) (look for files tagged `preview`).
 
 > **👉 Get Started:**
 > Detailed command references are strictly documented in the respective directories to ensure clarity:
