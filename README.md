@@ -57,21 +57,9 @@ It requires **no installation** or environment configuration: **simply download 
 > * **[📂 Rust Implementation](./rust/)** (**Recommended**): Instructions for the official high-performance binaries.
 > * **[📂 Python Implementation](./py/)** (**Educational Reference**): An implementation provided **solely for logic validation and research**.
 > * **[📂 Random Access Preview](./rust_random_access_PREVIEW/)** (**Investigation & Development**): Documentation for the Early Prototype (Row Groups & O(1) Seeking).
----
-
-## 🔮 Current Scope & Future Direction
-
-### ⚡ Current Focus: Archival & Full Restoration
-CAST is currently designed as a stream transformer for **high-efficiency archival**.
-* **Primary Goal:** Maximize storage density for long-term retention, while maintaining practical restoration speeds.
-* **Access Pattern:** **Sequential Access**. The tool is optimized for scenarios where the full file is restored for processing.
-
-### 🔭 Research Preview: Random Access
-The internal architecture is inherently **Block-Based**, providing a foundation for seekability. We are actively developing an **Indexed Row Group** format to enable efficient Random Access (e.g., "fetch lines 1000-2000") without compromising the primary goal of compression density.
-
-> **🚧 Try the Preview:** A **Work-In-Progress Early research prototype** of this architecture is now available in the **[rust_random_access_PREVIEW](./rust_random_access_PREVIEW/)** directory. It introduces independent block compression and footer indexing to allow O(1) extraction.
 
 ---
+
 
 ## 📊 Benchmarks & Performance Evaluation
 
