@@ -1,11 +1,9 @@
-// QUESTA è LA VERSIONE CON DECOMPRESSORE MIGLIORATO DA GEMINI DI CHIARA (è il migliore ad oggi ma ancora il problema dello streaming in input in fase di decompressione. Leggi messaggio nella chat di Chiara.)
-
 use std::collections::{HashMap, HashSet};
 use std::borrow::Cow;
 use std::io::{Write, BufWriter};
 use crc32fast::Hasher;
 use memchr::memchr2;
-use std::time::Instant; // Per i benchmark
+//use std::time::Instant; // only for benchmarks
 
 // ============================================================================
 //  TRAITS FOR ABSTRACTION
@@ -508,10 +506,8 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
     }
 
     pub fn decompress<W: Write>(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag_raw: u8, output_writer: &mut W) -> Result<(), String> {
-        // Timer Globale
-        let t_start_total = Instant::now();
+        //let t_start_total = Instant::now();
 
-        // Buffer di scrittura ottimizzato (512KB)
         let mut writer = BufWriter::with_capacity(512 * 1024, output_writer);
         let mut hasher = Hasher::new();
 
@@ -525,28 +521,25 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
         }
 
         // ====================================================================
-        //  FASE 1: BACKEND DECOMPRESSION (ZERO-COPY STRATEGY)
+        //  STEP 1: BACKEND DECOMPRESSION (ZERO-COPY STRATEGY)
         // ====================================================================
-        let t_backend_start = Instant::now();
+        //let t_backend_start = Instant::now();
         let is_unified = c_reg.is_empty() && c_ids.is_empty();
 
-        // TRUCCO RUST: Dichiariamo i contenitori (Owner) vuoti all'esterno
-        // per mantenerli vivi fino alla fine della funzione.
         let mut _storage_unified: Vec<u8> = Vec::new();
         let mut _storage_reg: Vec<u8> = Vec::new();
         let mut _storage_ids: Vec<u8> = Vec::new();
         let mut _storage_vars: Vec<u8> = Vec::new();
 
-        // Questi sono i "puntatori" (Slices) che useremo. Non costano nulla.
+        // Slices
         let reg_data_bytes: &[u8];
         let ids_data_bytes: &[u8];
         let vars_data_bytes: &[u8];
         let num_rows_single_template_header: u32;
 
         if is_unified {
-            // 1. Decomprimiamo nel contenitore "storage"
             _storage_unified = self.backend.decompress(c_vars);
-            let full = &_storage_unified; // Lavoriamo sul riferimento
+            let full = &_storage_unified; // working on reference
 
             // Parsing Header Unified (Senza Copiare!)
             if full.len() < 8 { return Err("Corrupted Archive (Header)".to_string()); }
@@ -556,7 +549,6 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
             let mut off = 8;
             if off + lr > full.len() { return Err("Corrupted Archive (Reg Len)".to_string()); }
 
-            // ASSEGNAZIONE SLICE (Costo Zero)
             reg_data_bytes = &full[off..off+lr];
             off += lr;
 
@@ -572,11 +564,10 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
             let v_start = off + (if (id_flag_raw & 0x7F) != 3 { li } else { 0 });
             if v_start > full.len() { return Err("Corrupted Archive (Vars)".to_string()); }
 
-            // ASSEGNAZIONE SLICE (Costo Zero - Risparmiati 1.5GB di copia!)
             vars_data_bytes = &full[v_start..];
 
         } else {
-            // Modalità Split: Decomprimiamo nei rispettivi storage
+            // Split mode
             _storage_reg = self.backend.decompress(c_reg);
             reg_data_bytes = &_storage_reg;
 
@@ -592,15 +583,14 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
             num_rows_single_template_header = 0;
         }
 
-        let t_backend = t_backend_start.elapsed();
+        //let t_backend = t_backend_start.elapsed();
 
         // ====================================================================
-        //  FASE 2: SETUP STRUTTURE
+        //  STEP 2: STRUCTURES SETUP
         // ====================================================================
         let is_latin1 = (id_flag_raw & 0x80) != 0;
         let id_flag = id_flag_raw & 0x7F;
 
-        // Qui dobbiamo fare to_vec() perché String vuole ownership, ma il registry è minuscolo (pochi KB)
         let reg_str = String::from_utf8(reg_data_bytes.to_vec()).map_err(|_| "Registry corrupted (UTF-8 error)".to_string())?;
         let skeletons: Vec<&str> = reg_str.split(REG_SEPARATOR).collect();
 
@@ -610,9 +600,9 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
         else if id_flag == 0 { for ch in ids_data_bytes.chunks_exact(2) { template_ids.push(u16::from_le_bytes(ch.try_into().unwrap()) as usize); } }
 
         // ====================================================================
-        //  FASE 3: MAPPING COLONNE (SIMD)
+        //  STEP 3: SIMD COLUMN MAP
         // ====================================================================
-        let t_cast_start = Instant::now();
+        //let t_cast_start = Instant::now();
 
         let col_sep = 0x02u8;
         let row_sep = 0x00u8;
@@ -667,7 +657,7 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
         let mut out_buffer: Vec<u8> = Vec::with_capacity(BUF_SIZE * 2);
 
         // ====================================================================
-        //  FASE 4: RICOSTRUZIONE (SIMD + OUTER FLUSH)
+        //  STEP 4: SIMD + OUTER FLUSH
         // ====================================================================
 
         let count_loop = if id_flag == 3 {
@@ -701,7 +691,6 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
             let col_indices = &template_col_map[t_id as usize];
 
             for (p_idx, part) in parts.iter().enumerate() {
-                // 1. Scrittura parte statica
                 if is_latin1 {
                     if part.is_ascii() { out_buffer.extend_from_slice(part.as_bytes()); }
                     else { for c in part.chars() { out_buffer.push(c as u8); } }
@@ -709,7 +698,6 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
                     out_buffer.extend_from_slice(part.as_bytes());
                 }
 
-                // 2. Scrittura variabile (SIMD)
                 if p_idx < col_indices.len() {
                     let g_idx = col_indices[p_idx];
                     let cursor = global_col_cursors[g_idx];
@@ -757,7 +745,6 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
                 }
             }
 
-            // OUTER FLUSH (Ottimizzazione CPU)
             if out_buffer.len() >= BUF_SIZE {
                 hasher.update(&out_buffer);
                 writer.write_all(&out_buffer).map_err(|e| e.to_string())?;
@@ -765,23 +752,21 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
             }
         }
 
-        // Final Flush del buffer residuo
         if !out_buffer.is_empty() {
             hasher.update(&out_buffer);
             writer.write_all(&out_buffer).map_err(|e| e.to_string())?;
         }
 
-        // CALCOLO TEMPO CAST PRIMA DEL FLUSH SU DISCO
-        let t_cast = t_cast_start.elapsed();
+        //let t_cast = t_cast_start.elapsed();
 
         writer.flush().map_err(|e| e.to_string())?;
         let crc = hasher.finalize();
 
-        println!("\n🔍 [CAST DIAGNOSTICS] ---------------------------------");
+        /*println!("\n🔍 [CAST DIAGNOSTICS] ---------------------------------");
         println!("   📦 Backend Time (Load & Unzip):  {:.2?}", t_backend);
         println!("   ⚡ CAST Logic Time (Rebuild):    {:.2?}", t_cast);
         println!("   ⏱️  TOTAL WALL CLOCK:             {:.2?}", t_start_total.elapsed());
-        println!("   -----------------------------------------------------\n");
+        println!("   -----------------------------------------------------\n");*/
 
         if crc != expected_crc {
             return Err(format!("CRC Check Failed. Expected: {}, Got: {}", expected_crc, crc));

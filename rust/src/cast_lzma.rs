@@ -222,8 +222,6 @@ impl NativeDecompressor for SevenZipDecompressorBackend {
 
         let cmd = get_7z_cmd();
 
-        // 1. Spawniamo 7-Zip configurato per leggere da Stdin (-si) e scrivere su Stdout (-so)
-        // Aggiungiamo -txz esplicito perché da stdin non può indovinare l'estensione
         let mut child = Command::new(&cmd)
             .args(&["e", "-txz", "-si", "-so", "-y", "-bb0"])
             .stdin(Stdio::piped())
@@ -232,38 +230,31 @@ impl NativeDecompressor for SevenZipDecompressorBackend {
             .spawn()
             .expect("Failed to spawn 7-Zip");
 
-        // 2. Gestione Input (Scrittura su Stdin in un thread separato per evitare deadlock)
-        // Clona i dati compressi (costo basso, sono "piccoli") per passarli al thread
         let input_data = data.to_vec();
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
 
         thread::spawn(move || {
             stdin.write_all(&input_data).ok();
-            // stdin viene chiuso automaticamente qui (drop), segnalando EOF a 7z
         });
 
-        // 3. Gestione Output (Lettura da Stdout con Pre-allocazione)
-        // Stimiamo un ratio di compressione 5:1 per evitare troppe riallocazioni
-        // (La Native usava *3, qui osiamo *5 per sicurezza sulle performance)
         let estimated_size = data.len() * 5;
         let mut output_data = Vec::with_capacity(estimated_size);
 
         if let Some(mut stdout) = child.stdout.take() {
-            // Leggiamo tutto lo stream direttamente nel buffer finale
             if let Err(e) = stdout.read_to_end(&mut output_data) {
                 eprintln!("Error reading 7z output: {}", e);
                 return Vec::new();
             }
         }
 
-        // Attendiamo che il processo finisca
         let status = child.wait().expect("Failed to wait on 7z");
 
         if status.success() {
             output_data
         } else {
-            eprintln!("7-Zip returned error status");
-            Vec::new() // O gestire l'errore meglio se vuoi
+            eprintln!("\n[!] CRITICAL ERROR: 7-Zip backend returned a failure status.");
+            eprintln!("[!] The decompression process cannot continue safely.");
+            std::process::exit(1);
         }
     }
 }
