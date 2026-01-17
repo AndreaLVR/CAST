@@ -118,11 +118,19 @@ fn main() {
             }
         },
         _ => {
-            if let Some(path) = try_find_7zip_path() {
-                println!("[*]  Auto-detected 7-Zip at: {}", path);
-                (true, format!("7-Zip (External) [Found at: {}]", path))
+            // LOGICA CONDIZIONALE:
+            // 1. COMPRESSIONE (-c): Cerchiamo 7-Zip per performance migliori in scrittura.
+            // 2. DECOMPRESSIONE (-d) o VERIFICA: Usiamo NATIVE di default (più stabile e veloce in lettura).
+            if mode_or_file == "-c" {
+                if let Some(path) = try_find_7zip_path() {
+                    println!("[*]  Auto-detected 7-Zip at: {}", path);
+                    (true, format!("7-Zip (External) [Found at: {}]", path))
+                } else {
+                    (false, "Native (xz2) [Fallback]".to_string())
+                }
             } else {
-                (false, "Native (xz2) [Fallback]".to_string())
+                // Default per Decompressione/Verifica -> Native
+                (false, "Native (xz2) [Default]".to_string())
             }
         }
     };
@@ -235,7 +243,7 @@ fn print_usage(exe_name: &str) {
           -d <in> <out>      Decompress CAST file to original format\n  \
           -v <file>          Verify the integrity of a CAST file\n\n\
         Options:\n  \
-          --mode <TYPE>      Backend selection: 'native' or '7zip'\n                         (Default: Auto-detect 7zip, fallback to native)\n  \
+          --mode <TYPE>      Backend selection: 'native' or '7zip'\n                         (Default: 7zip for compression, Native for decompression)\n  \
           --multithread      Enable parallel compression for higher speed\n  \
           --chunk-size <S>   Split input in chunks (Compression RAM Saver) (e.g., 512MB). Default: Solid Mode\n  \
           --dict-size <S>    Set LZMA Dictionary size (Default: 128MB)\n  \
