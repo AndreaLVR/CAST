@@ -118,9 +118,6 @@ fn main() {
             }
         },
         _ => {
-            // LOGICA CONDIZIONALE:
-            // 1. COMPRESSIONE (-c): Cerchiamo 7-Zip per performance migliori in scrittura.
-            // 2. DECOMPRESSIONE (-d) o VERIFICA: Usiamo NATIVE di default (più stabile e veloce in lettura).
             if mode_or_file == "-c" {
                 if let Some(path) = try_find_7zip_path() {
                     println!("[*]  Auto-detected 7-Zip at: {}", path);
@@ -129,7 +126,6 @@ fn main() {
                     (false, "Native (xz2) [Fallback]".to_string())
                 }
             } else {
-                // Default per Decompressione/Verifica -> Native
                 (false, "Native (xz2) [Default]".to_string())
             }
         }
@@ -456,7 +452,7 @@ fn do_verify_standalone(input_path: &str, use_7zip: bool) {
         match decompressor.decompress(chunk_reg, chunk_ids, chunk_vars, expected_crc, id_flag, &mut temp_buffer) {
             Ok(_) => {
                 let mut h = Hasher::new();
-                h.update(&temp_buffer); // Ora usiamo il buffer che abbiamo passato
+                h.update(&temp_buffer);
                 if h.finalize() != expected_crc {
                     println!("\n[!]   FAILURE: CRC Mismatch at Chunk {}!", chunk_idx);
                     std::process::exit(1);
