@@ -350,13 +350,7 @@ fn run_cast_solid_only(data: &[u8], multithread: bool, dict_size: u32, use_7zip:
     };
     let decompressor = CASTLzmaDecompressor::new(decompressor_backend);
 
-    // MODIFICA: Buffer di output pre-allocato
     let mut output_buffer = Vec::with_capacity(data.len());
-
-    // Handling Result type from decompress
-    // Nota: dobbiamo muovere output_buffer dentro o passarlo in modo thread-safe se catch_unwind lo richiede,
-    // ma qui siamo single thread nel benchmark locale solitamente.
-    // Semplificazione senza catch_unwind per chiarezza (o adattalo se vuoi il panic catch):
 
     match decompressor.decompress(&r, &i, &v, expected_crc, flag, &mut output_buffer) {
         Ok(_) => {
@@ -563,7 +557,7 @@ fn print_bench_usage(exe_name: &str) {
           --list <file.txt>      File containing a list of paths to test (one per line)\n  \
           --compare-with <algos> Comma-separated list of competitors (e.g. 'lzma2,zstd')\n                         or 'all' for [lzma2, brotli, zstd]\n\n\
         Options:\n  \
-          --mode <TYPE>          Backend selection: 'native' or '7zip' (Default: Auto-detect 7zip, fallback to native)\n  \
+          --mode <TYPE>          Backend selection: 'native' or '7zip' (Default: 7zip for compression, Native for decompression)\n  \
           --multithread          Enable multithreading compression for CAST and competitors\n  \
           --chunk-size <SIZE>    Split input in chunks (Compression RAM Saver) (e.g., 512MB). Default: Solid Mode\n  \
           --dict-size <SIZE>     Set LZMA Dictionary Size (Default: 128MB)\n  \

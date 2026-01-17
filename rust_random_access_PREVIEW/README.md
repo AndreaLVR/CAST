@@ -49,7 +49,9 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 * **Partial Decompression:** Extract specific rows (e.g., rows 25,000-26,000) instantly without processing the whole file.
 * **Binary Guard:** Automatic handling of binary/mixed content (fallback to passthrough mode) per-chunk.
 
-> **🚧 Current Limitation:** The random access mechanism is currently bound to **Row Indexing** (e.g., "Get rows 100 to 200"). Advanced querying capabilities (such as filtering by column value, SQL-like queries, or predicate pushdown) are part of the future roadmap and are not yet implemented in this preview.
+> **🚧 Current Limitations:**
+> 1. **Querying:** The random access mechanism is currently bound to **Row Indexing** (e.g., "Get rows 100 to 200"). Advanced querying (SQL-like, filtering) is not yet implemented.
+> 2. **Unoptimized Decompression Engine:** This prototype currently uses a **simplified reconstruction logic** (byte-by-byte writing) and lacks the **Buffered Streaming I/O** and memory optimizations present in the [Standard Version](../rust). Consequently, **full-file decompression** is currently slower than the main engine. This does **not** affect Random Access speed, which remains almost instantaneous.
 
 ## 📊 Performance Trade-offs (Preliminary)
 
@@ -57,7 +59,7 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 
 * **Compression Ratio:** Minimal impact. Most datasets show a **0% to 7% size increase**. Highly dense/massive logs (e.g., HDFS) may see up to ~13% increase due to independent dictionary resets.
 * **Compression Speed:** **Variable Overhead.** While some datasets show negligible difference (or even slight speedups), others exhibit a **15% to 40% increase in compression time**. This is due to the computational cost of managing independent dictionary contexts and repeatedly flushing the stream buffers.
-* **Decompression Speed (Full File):** Generally faster. We observed a **20% to 35% speedup** on mid-sized datasets (e.g., PostgreSQL, NYC Bus) due to improved I/O chunk buffering. Very large files (>1.5GB) might experience a slight overhead.
+* **Decompression Speed (Full File):** TO BE RECALCULATED AGAIN AFTER INCLUDING THE SAME OPTIMIZED DECOMPRESSION ADDED TO THE STANDARD VERSION.
 * **Random Access:** **O(1) complexity**. Seeking and extracting a small range is instantaneous (**< 0.5s**), regardless of total file size (GBs or TBs).
 
 ### Visual Benchmarks
@@ -71,9 +73,9 @@ This chart visualizes the "cost" of indexing. As shown, the size increase is gen
 ![Compression Benchmarks](benchmarks/compression_benchmarks.png)
 
 #### 2. Full Decompression Speed Comparison
-This chart compares the time required to decompress the **entire file**. The block-based architecture often yields faster throughput for mid-sized files.
+This chart compares the time required to decompress the **entire file**. 
 
-![Decompression Benchmarks](benchmarks/decompression_benchmarks.png)
+TO BE RECALCULATED AGAIN AFTER INCLUDING THE SAME OPTIMIZED DECOMPRESSION ADDED TO THE STANDARD VERSION.
 
 > **⚡ Important:** The chart above refers to *Full Decompression*. If you use the `--rows` parameter to extract specific ranges, **the operation is near-instantaneous** regardless of the file size, as it only processes the relevant chunk.
 

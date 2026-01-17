@@ -34,7 +34,7 @@ This repository contains the source code and benchmarking tools used to produce 
 * 🧠 **Schema-less Inference**: Uses an **Optimized Adaptive Parser** to automatically detect repetitive patterns in **arbitrary structured and semi-structured text streams**, operating purely on syntax without relying on file extensions or predefined schemas.
 * 📦 **Enhanced Compression Density**: Maximizes efficiency for Cold Storage & Archival by significantly reducing disk footprint, while simultaneously optimizing Bandwidth-Limited Transmission (e.g., Edge-to-Cloud logging). Ideally paired with high-ratio backends like LZMA2 to minimize infrastructure costs.
 * 🚀 **Throughput Efficiency**: For **structured and semi-structured inputs**, the reduced entropy of the columnar streams lowers the backend encoding cost, often resulting in a net reduction of total execution time despite the parsing overhead.
-* 🛠️ **Memory Scalability & Safety**: Features a fully **Streaming Decompressor** that ensures **constant memory footprint** during restoration, effectively immune to OOM crashes regardless of file size. Includes configurable **Stream Chunking** and **Dictionary Size** control for compression on constrained systems.
+* 🛠️ **Memory Scalability & Safety**: Features a **Block-Based Streaming Architecture**. The engine processes data in chunks and **streams the output incrementally**, keeping memory usage **bounded by the compressed block size** (plus a small constant buffer). This ensures OOM immunity during restoration—provided explicit **Stream Chunking** was enabled during compression—regardless of the total output size.
 * 🛡️ **Robustness**: Includes a **Binary Guard** heuristic to automatically detect and **bypass** non-structured or binary files, preventing processing overhead and ensuring data integrity.
 * 🔭 **Random Access Architecture [EXPERIMENTAL PREVIEW]**: The internal architecture is inherently **Block-Based**, providing a foundation for seekability. We have **just started investigation and development** on an **Indexed Row Group** format to enable efficient Random Access (e.g., "fetch lines 1000-2000") without compromising the primary goal of compression density. This is currently a strictly experimental proof-of-concept.
 
@@ -55,8 +55,13 @@ It requires **no installation** or environment configuration: **simply download 
 > **👉 Get Started:**
 > Detailed command references are strictly documented in the respective directories to ensure clarity:
 > * **[📂 Rust Implementation](./rust/)** (**Recommended**): Instructions for the official high-performance binaries.
-> * **[📂 Python Implementation](./py/)** (**Educational Reference**): An implementation provided **solely for logic validation and research**.
+> * **[📂 Python Implementation](./py/)** (**Conceptual Reference**): An implementation provided **solely for logic validation and research**.
 > * **[📂 Random Access Preview](./rust_random_access_PREVIEW/)** (**Investigation & Development**): Documentation for the Early Prototype (Row Groups & O(1) Seeking).
+
+### ⚡ Smart Defaults
+The **Rust Engine** automatically adopts a **Hybrid Strategy** to give you the best performance out of the box:
+* **Compression:** Defaults to **System Mode (7-Zip)** (if available) to maximize multi-threaded throughput.
+* **Decompression:** Defaults to **Native Mode** to minimize process latency and overhead.
 
 ---
 
@@ -136,10 +141,10 @@ Here we measure the real-world "Time-to-Compression" trade-off.
 
 Decompression involves decoding the columnar streams and re-assembling the original row-oriented layout ($S + V \rightarrow L$). The data below measures the **full restoration time** required by the CAST engine.
 
-**Observation:** The reconstruction phase is strictly linear ($O(N)$). The engine utilizes **buffered streaming I/O** to maximize throughput while maintaining a **minimal, constant RAM profile**, ensuring stability even when restoring multi-gigabyte files on low-memory hardware.
+**Observation:** The reconstruction phase is strictly linear ($O(N)$). The engine utilizes buffered streaming I/O to maximize throughput while maintaining a memory profile bounded by the block size. This ensures stability even when restoring multi-gigabyte files on low-memory hardware, provided that Stream Chunking was utilized during the compression phase.
 
-![Decompression Landscape](paper/images/decompression_figure1.png)
-> *Figure 4: Decompression Performance Landscape. Labels above bars indicate the original dataset size. The chart highlights that restoration speed is driven by **internal redundancy**: highly repetitive streams (e.g., Smart City, HDFS) are decoded significantly faster (>100 MB/s) than high-entropy datasets, regardless of the specific file format.*
+![Decompression Landscape](paper/images/decompression_figure2.png)
+> *Figure 4: Decompression Performance Landscape. The chart benchmarks the native Rust implementation of CAST against the system-call variant and standard LZMA2. LZMA2 (orange) generally maintains a higher throughput, reflecting the computational trade-off required for CAST's structural reconstruction phase. Despite this overhead, CAST delivers consistently viable restoration speeds (50–200 MB/s), making it suitable for archival storage where density is the primary metric. Notably, on highly repetitive datasets (e.g., Smart City, US Stocks), the reduced I/O volume allows CAST to overcome the reconstruction cost and outperform the baseline.*
 
 <details>
 <summary><strong>🔍 CLICK TO EXPAND THE FULL BENCHMARKS TABLE</strong></summary>
@@ -179,10 +184,10 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
 * **Method:** A performance-oriented **research prototype** featuring a **Zero-Copy Parsing Strategy**, **Multithreading**, and **Stream Chunking** (compression) paired with **Streaming I/O** (decompression) to handle gigabyte-sized files with a constant memory footprint.* **Unified Architecture:** The engine supports dynamic backend selection via the `--mode` flag:
     * **Native Mode:** Standalone implementation. Used to validate the **Algorithmic Efficiency (Maximum Density)** presented in Table 1.
     * **System Mode (7-Zip):** Invokes the external `7-Zip` CLI. Used to validate **Production Throughput**.
-      > **💡 Recommendation:** This is the **preferred variant** for general usage. It achieves drastic speedups with **negligible compression loss** compared to the Native version.
+      > **💡 Recommendation:** This is the preferred variant for compression. The Rust engine automatically selects this mode by default (if 7z is detected) to ensure the best out-of-the-box performance.
 * **Pros:**
     * **Speed:** significantly faster on complex datasets, leveraging Rust's zero-cost abstractions.
-    * **Scalability:** The `--chunk-size` (compression) and **Streaming Architecture** (decompression) guarantee a constant and configurable memory footprint, preventing OS swapping or OOM errors.
+    * **Scalability:** The `--chunk-size` parameter allows users to strictly bound the memory footprint during both compression and decompression, preventing OS swapping or OOM errors on constrained systems.
 * **⚠️ Maturity & Performance:** This engine is **engineered for robustness and high performance**, incorporating specific safeguards like **strictly bounded memory usage** and **automated binary detection** to prevent instability.
     In particular, the **System Mode** pipeline demonstrates **Production-Grade Throughput**, often **exceeding the encoding speed of the standard 7-Zip baseline**.
     However, it is classified as a **Research Prototype** primarily due to its recent development: it lacks the decades of community fuzz-testing and security auditing present in legacy tools like `xz` or `zstd`. It is fully functional and stable for benchmarking and archival, but should be evaluated with the awareness that it is a newly developed codebase.
