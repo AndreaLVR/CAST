@@ -141,7 +141,7 @@ Here we measure the real-world "Time-to-Compression" trade-off.
 
 Decompression involves decoding the columnar streams and re-assembling the original row-oriented layout ($S + V \rightarrow L$). The data below measures the **full restoration time** required by the CAST engine.
 
-**Observation:** The reconstruction phase is strictly linear ($O(N)$). The engine utilizes **buffered streaming I/O** to maximize throughput while maintaining a **minimal, constant RAM profile**, ensuring stability even when restoring multi-gigabyte files on low-memory hardware.
+**Observation:** The reconstruction phase is strictly linear ($O(N)$). The engine utilizes buffered streaming I/O to maximize throughput while maintaining a memory profile bounded by the block size. This ensures stability even when restoring multi-gigabyte files on low-memory hardware, provided that Stream Chunking was utilized during the compression phase.
 
 ![Decompression Landscape](paper/images/decompression_figure2.png)
 > *Figure 4: Decompression Performance Landscape. The chart benchmarks the native Rust implementation of CAST against the system-call variant and standard LZMA2. LZMA2 (orange) generally maintains a higher throughput, reflecting the computational trade-off required for CAST's structural reconstruction phase. Despite this overhead, CAST delivers consistently viable restoration speeds (50–200 MB/s), making it suitable for archival storage where density is the primary metric. Notably, on highly repetitive datasets (e.g., Smart City, US Stocks), the reduced I/O volume allows CAST to overcome the reconstruction cost and outperform the baseline.*
