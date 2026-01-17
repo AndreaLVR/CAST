@@ -49,7 +49,9 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 * **Partial Decompression:** Extract specific rows (e.g., rows 25,000-26,000) instantly without processing the whole file.
 * **Binary Guard:** Automatic handling of binary/mixed content (fallback to passthrough mode) per-chunk.
 
-> **🚧 Current Limitation:** The random access mechanism is currently bound to **Row Indexing** (e.g., "Get rows 100 to 200"). Advanced querying capabilities (such as filtering by column value, SQL-like queries, or predicate pushdown) are part of the future roadmap and are not yet implemented in this preview.
+> **🚧 Current Limitations:**
+> 1. **Querying:** The random access mechanism is currently bound to **Row Indexing** (e.g., "Get rows 100 to 200"). Advanced querying (SQL-like, filtering) is not yet implemented.
+> 2. **Unoptimized Decompression Engine:** This prototype currently uses a **simplified reconstruction logic** (byte-by-byte writing) and lacks the **Buffered Streaming I/O** and memory optimizations present in the [Standard Version](../rust). Consequently, **full-file decompression** is currently slower than the main engine. This does **not** affect Random Access speed, which remains almost instantaneous.
 
 ## 📊 Performance Trade-offs (Preliminary)
 
