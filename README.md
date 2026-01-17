@@ -138,7 +138,7 @@ Decompression involves decoding the columnar streams and re-assembling the origi
 
 **Observation:** The reconstruction phase is strictly linear ($O(N)$). The engine utilizes **buffered streaming I/O** to maximize throughput while maintaining a **minimal, constant RAM profile**, ensuring stability even when restoring multi-gigabyte files on low-memory hardware.
 
-![Decompression Landscape](paper/images/decompression_figure1.png)
+![Decompression Landscape](paper/images/decompression_figure2.png)
 > *Figure 4: Decompression Performance Landscape. Labels above bars indicate the original dataset size. The chart highlights that restoration speed is driven by **internal redundancy**: highly repetitive streams (e.g., Smart City, HDFS) are decoded significantly faster (>100 MB/s) than high-entropy datasets, regardless of the specific file format.*
 
 <details>
