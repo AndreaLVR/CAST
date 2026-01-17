@@ -139,7 +139,7 @@ Decompression involves decoding the columnar streams and re-assembling the origi
 **Observation:** The reconstruction phase is strictly linear ($O(N)$). The engine utilizes **buffered streaming I/O** to maximize throughput while maintaining a **minimal, constant RAM profile**, ensuring stability even when restoring multi-gigabyte files on low-memory hardware.
 
 ![Decompression Landscape](paper/images/decompression_figure2.png)
-> *Figure 4: Decompression Performance Landscape. Labels above bars indicate the original dataset size. The chart highlights that restoration speed is driven by **internal redundancy**: highly repetitive streams (e.g., Smart City, HDFS) are decoded significantly faster (>100 MB/s) than high-entropy datasets, regardless of the specific file format.*
+> *Figure 4: Decompression Performance Landscape. The chart benchmarks the native Rust implementation of CAST against the system-call variant and standard LZMA2. While the native approach (dark teal) effectively reduces runtime overhead compared to the system-based version (light teal), LZMA2 (orange) retains a throughput advantage on most datasets. This performance gap reflects the inevitable computational cost of CAST's structural reconstruction phase. However, this overhead remains strictly linear and manageable, allowing CAST to maintain competitive speeds ($>100$ MB/s on large files) and even outperform LZMA2 on highly repetitive structured data (e.g., Smart City, US Stocks).*
 
 <details>
 <summary><strong>🔍 CLICK TO EXPAND THE FULL BENCHMARKS TABLE</strong></summary>
