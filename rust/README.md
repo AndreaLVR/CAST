@@ -9,14 +9,14 @@
 > On structured datasets CAST often breaks the traditional compression trade-off by delivering a **Dual Advantage**:
 > 1. **Superior Density:** It often produces smaller files than standard LZMA2.
 > 2. **Faster Encoding:** It significantly reduces processing time by simplifying the data stream *before* the backend encoder sees it.
-> 3. **Memory Safety:** The Streaming Architecture ensures constant memory usage during decompression, preventing crashes even on low-RAM devices restoring massive archives.
+> 3. **Memory Safety:** The **Block-Based Streaming Architecture** keeps memory usage bounded by the compressed block size, preventing crashes even on low-RAM devices (provided **Stream Chunking** was used during compression).
 >
 > **The goal is to demonstrate that structural pre-processing can improve both speed and ratio simultaneously.**
 
 This directory contains the high-performance Rust port of the CAST algorithm.
 
 This unified implementation supports two distinct operating modes (backends) within a single executable:
-1.  **Native Mode (Standalone):** Uses embedded Rust libraries (`xz2`) for maximum portability and zero runtime dependencies.
+1.  **Native Mode (Standalone):** Uses embedded Rust libraries (`xz2`) for maximum portability, low latency, and zero runtime dependencies.
 2.  **7-Zip Mode (High Performance):** Acts as a smart wrapper around an external `7z` executable to leverage its optimized multi-threading engine.
 
 ---
@@ -54,7 +54,7 @@ cast -c <input_file> <output_file> [options]
 
 **Options:**
 * `--mode <native|7zip>`: Selects the compression backend.
-    * `auto` (Default): Tries to find `7z`. If found, uses it (faster). If not, falls back to `native`.
+    * `auto` (Default): **Smart Hybrid Strategy.** Tries to find `7z`. If found, uses it for **Compression** (High Throughput). If not, falls back to `native`.
     * `7zip`: Forces usage of external 7-Zip. Fails if not found.
     * `native`: Forces usage of internal library (single-threaded by default).
 * `--multithread`: Enables multi-threading for the **Native** backend. (7-Zip mode is multi-threaded by default).
@@ -82,29 +82,31 @@ cast -c huge.csv archive.cast --chunk-size 500MB --dict-size 64MB
 ```
 
 ### 2. Decompression
-Automatically detects the format. You can use `--mode` to force a specific backend (e.g., to use 7-Zip for faster decompression).
+Automatically detects the format. You can use `--mode` to force a specific backend, though the default is usually optimal.
+
+> **ℹ️ Note on Defaults:** When using `auto` (default), the engine prefers **Native Mode** for decompression as benchmarks show it provides lower latency and superior throughput for most datasets.
 
 ```bash
-# Auto-detect (Recommended)
+# Auto-detect (Recommended - Defaults to Native)
 cast -d archive.cast restored.csv
 
-# Force 7-Zip backend (Faster)
+# Force 7-Zip backend (Alternative)
 cast -d archive.cast restored.csv --mode 7zip
 ```
 
 ### 3. Verification (Standalone)
-Checks integrity (CRC32 & Structure) without writing to disk. You can use --mode to force a specific backend (e.g., to use 7-Zip for faster verification).
+Checks integrity (CRC32 & Structure) without writing to disk.
 
 ```bash
 # Auto-detect
 cast -v archive.cast
 
-# Force 7-Zip backend (Faster verification)
+# Force 7-Zip backend
 cast -v archive.cast --mode 7zip
 ```
 
 > **🛡️ Safe Streaming Restoration:**
-> The decompressor automatically uses **Buffered Streaming I/O**. This means you can restore multi-gigabyte files on a machine with very little RAM (e.g., 1GB) without crashing. It never loads the full file into memory.
+> The decompressor utilizes **Buffered Streaming I/O**. This means memory usage remains bounded by the **Chunk Size** used during compression. If the file was compressed with chunks (e.g., `--chunk-size 100MB`), you can restore multi-gigabyte archives on low-RAM machines without crashing.
 
 ---
 
