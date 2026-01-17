@@ -563,7 +563,7 @@ fn print_bench_usage(exe_name: &str) {
           --list <file.txt>      File containing a list of paths to test (one per line)\n  \
           --compare-with <algos> Comma-separated list of competitors (e.g. 'lzma2,zstd')\n                         or 'all' for [lzma2, brotli, zstd]\n\n\
         Options:\n  \
-          --mode <TYPE>          Backend selection: 'native' or '7zip' (Default: Auto-detect 7zip, fallback to native)\n  \
+          --mode <TYPE>          Backend selection: 'native' or '7zip' (Default: 7zip for compression, Native for decompression)\n  \
           --multithread          Enable multithreading compression for CAST and competitors\n  \
           --chunk-size <SIZE>    Split input in chunks (Compression RAM Saver) (e.g., 512MB). Default: Solid Mode\n  \
           --dict-size <SIZE>     Set LZMA Dictionary Size (Default: 128MB)\n  \
