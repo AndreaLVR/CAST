@@ -1,7 +1,11 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+// QUESTA è LA VERSIONE CON DECOMPRESSORE MIGLIORATO DA GEMINI DI CHIARA (è il migliore ad oggi ma ancora il problema dello streaming in input in fase di decompressione. Leggi messaggio nella chat di Chiara.)
+
+use std::collections::{HashMap, HashSet};
 use std::borrow::Cow;
 use std::io::{Write, BufWriter};
 use crc32fast::Hasher;
+use memchr::memchr2;
+use std::time::Instant; // Per i benchmark
 
 // ============================================================================
 //  TRAITS FOR ABSTRACTION
@@ -494,10 +498,6 @@ impl<C: NativeCompressor> CASTCompressor<C> {
     }
 }
 
-// ============================================================================
-//  CAST DECOMPRESSOR (OPTIMIZED)
-// ============================================================================
-
 pub struct CASTDecompressor<D: NativeDecompressor> {
     backend: D
 }
@@ -508,8 +508,11 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
     }
 
     pub fn decompress<W: Write>(&self, c_reg: &[u8], c_ids: &[u8], c_vars: &[u8], expected_crc: u32, id_flag_raw: u8, output_writer: &mut W) -> Result<(), String> {
+        // Timer Globale
+        let t_start_total = Instant::now();
 
-        let mut writer = BufWriter::with_capacity(256 * 1024, output_writer);
+        // Buffer di scrittura ottimizzato (512KB)
+        let mut writer = BufWriter::with_capacity(512 * 1024, output_writer);
         let mut hasher = Hasher::new();
 
         // --- PASSTHROUGH MODE ---
@@ -517,187 +520,268 @@ impl<D: NativeDecompressor> CASTDecompressor<D> {
             let data = self.backend.decompress(c_vars);
             hasher.update(&data);
             writer.write_all(&data).map_err(|e| e.to_string())?;
-
-            let crc = hasher.finalize();
-            if crc != expected_crc { return Err(format!("CRC Check Failed. Expected: {}, Got: {}", expected_crc, crc)); }
+            if hasher.finalize() != expected_crc { return Err("CRC Check Failed (Passthrough)".to_string()); }
             return Ok(());
         }
 
-        // --- SETUP FLAGS ---
+        // ====================================================================
+        //  FASE 1: BACKEND DECOMPRESSION (ZERO-COPY STRATEGY)
+        // ====================================================================
+        let t_backend_start = Instant::now();
+        let is_unified = c_reg.is_empty() && c_ids.is_empty();
+
+        // TRUCCO RUST: Dichiariamo i contenitori (Owner) vuoti all'esterno
+        // per mantenerli vivi fino alla fine della funzione.
+        let mut _storage_unified: Vec<u8> = Vec::new();
+        let mut _storage_reg: Vec<u8> = Vec::new();
+        let mut _storage_ids: Vec<u8> = Vec::new();
+        let mut _storage_vars: Vec<u8> = Vec::new();
+
+        // Questi sono i "puntatori" (Slices) che useremo. Non costano nulla.
+        let reg_data_bytes: &[u8];
+        let ids_data_bytes: &[u8];
+        let vars_data_bytes: &[u8];
+        let num_rows_single_template_header: u32;
+
+        if is_unified {
+            // 1. Decomprimiamo nel contenitore "storage"
+            _storage_unified = self.backend.decompress(c_vars);
+            let full = &_storage_unified; // Lavoriamo sul riferimento
+
+            // Parsing Header Unified (Senza Copiare!)
+            if full.len() < 8 { return Err("Corrupted Archive (Header)".to_string()); }
+            let lr = u32::from_le_bytes(full[0..4].try_into().unwrap()) as usize;
+            let li = u32::from_le_bytes(full[4..8].try_into().unwrap()) as usize;
+
+            let mut off = 8;
+            if off + lr > full.len() { return Err("Corrupted Archive (Reg Len)".to_string()); }
+
+            // ASSEGNAZIONE SLICE (Costo Zero)
+            reg_data_bytes = &full[off..off+lr];
+            off += lr;
+
+            if (id_flag_raw & 0x7F) != 3 {
+                if off + li > full.len() { return Err("Corrupted Archive (IDs Len)".to_string()); }
+                ids_data_bytes = &full[off..off+li];
+                num_rows_single_template_header = 0;
+            } else {
+                ids_data_bytes = &[];
+                num_rows_single_template_header = li as u32;
+            }
+
+            let v_start = off + (if (id_flag_raw & 0x7F) != 3 { li } else { 0 });
+            if v_start > full.len() { return Err("Corrupted Archive (Vars)".to_string()); }
+
+            // ASSEGNAZIONE SLICE (Costo Zero - Risparmiati 1.5GB di copia!)
+            vars_data_bytes = &full[v_start..];
+
+        } else {
+            // Modalità Split: Decomprimiamo nei rispettivi storage
+            _storage_reg = self.backend.decompress(c_reg);
+            reg_data_bytes = &_storage_reg;
+
+            if (id_flag_raw & 0x7F) != 3 {
+                _storage_ids = self.backend.decompress(c_ids);
+                ids_data_bytes = &_storage_ids;
+            } else {
+                ids_data_bytes = &[];
+            }
+
+            _storage_vars = self.backend.decompress(c_vars);
+            vars_data_bytes = &_storage_vars;
+            num_rows_single_template_header = 0;
+        }
+
+        let t_backend = t_backend_start.elapsed();
+
+        // ====================================================================
+        //  FASE 2: SETUP STRUTTURE
+        // ====================================================================
         let is_latin1 = (id_flag_raw & 0x80) != 0;
         let id_flag = id_flag_raw & 0x7F;
 
-        let is_unified = c_reg.is_empty() && c_ids.is_empty();
-        let reg_data_bytes;
-        let ids_data_bytes;
-        let vars_data_bytes;
-
-        let mut num_rows_single_template_header = 0;
-
-        if is_unified {
-            let full = self.backend.decompress(c_vars);
-            if full.len() < 8 { return Err("Corrupted Archive (Header)".to_string()); }
-            let len_reg = u32::from_le_bytes(full[0..4].try_into().unwrap()) as usize;
-            let len_ids_or_rows = u32::from_le_bytes(full[4..8].try_into().unwrap()) as usize;
-
-            let mut off = 8;
-            if off + len_reg > full.len() { return Err("Corrupted Archive (Registry Length)".to_string()); }
-            reg_data_bytes = full[off..off+len_reg].to_vec();
-            off += len_reg;
-
-            if id_flag != 3 {
-                if off + len_ids_or_rows > full.len() { return Err("Corrupted Archive (IDs Length)".to_string()); }
-                ids_data_bytes = full[off..off+len_ids_or_rows].to_vec();
-                off += len_ids_or_rows;
-            } else {
-                num_rows_single_template_header = len_ids_or_rows;
-                ids_data_bytes = Vec::new();
-            }
-            vars_data_bytes = full[off..].to_vec();
-        } else {
-            reg_data_bytes = self.backend.decompress(c_reg);
-            if id_flag != 3 {
-                ids_data_bytes = self.backend.decompress(c_ids);
-            } else {
-                ids_data_bytes = Vec::new();
-            }
-            vars_data_bytes = self.backend.decompress(c_vars);
-        }
-
-        let reg_str = String::from_utf8(reg_data_bytes).map_err(|_| "Registry corrupted (not UTF-8)".to_string())?;
+        // Qui dobbiamo fare to_vec() perché String vuole ownership, ma il registry è minuscolo (pochi KB)
+        let reg_str = String::from_utf8(reg_data_bytes.to_vec()).map_err(|_| "Registry corrupted (UTF-8 error)".to_string())?;
         let skeletons: Vec<&str> = reg_str.split(REG_SEPARATOR).collect();
 
-        // --- ID RECONSTRUNCTION ---
-        let mut template_ids = Vec::new();
-        if id_flag == 2 {
-            for &b in &ids_data_bytes { template_ids.push(b as usize); }
-        } else if id_flag == 1 {
-            for ch in ids_data_bytes.chunks_exact(4) { template_ids.push(u32::from_le_bytes(ch.try_into().unwrap()) as usize); }
-        } else if id_flag == 0 {
-            for ch in ids_data_bytes.chunks_exact(2) { template_ids.push(u16::from_le_bytes(ch.try_into().unwrap()) as usize); }
-        }
+        let mut template_ids = Vec::with_capacity(if id_flag == 3 { 0 } else { ids_data_bytes.len() / 2 });
+        if id_flag == 2 { for &b in ids_data_bytes { template_ids.push(b as usize); } }
+        else if id_flag == 1 { for ch in ids_data_bytes.chunks_exact(4) { template_ids.push(u32::from_le_bytes(ch.try_into().unwrap()) as usize); } }
+        else if id_flag == 0 { for ch in ids_data_bytes.chunks_exact(2) { template_ids.push(u16::from_le_bytes(ch.try_into().unwrap()) as usize); } }
 
-        // --- PREPARING COLUMNS OFFSET ---
-        let col_sep = b"\x02";
-        let row_sep = b"\x00";
+        // ====================================================================
+        //  FASE 3: MAPPING COLONNE (SIMD)
+        // ====================================================================
+        let t_cast_start = Instant::now();
 
-        let mut raw_columns_offsets = Vec::new();
+        let col_sep = 0x02u8;
+        let row_sep = 0x00u8;
+        let esc_byte = 0x01u8;
+
+        let mut global_col_ranges = Vec::with_capacity(vars_data_bytes.len() / 20);
         let mut start = 0;
-        let mut i = 0;
+        let mut cursor = 0;
         let max_len = vars_data_bytes.len();
 
-        while i < max_len {
-            if vars_data_bytes[i] == 0x01 {
-                i += 2;
-            } else if vars_data_bytes[i] == col_sep[0] {
-                raw_columns_offsets.push((start, i));
-                i += 1;
-                start = i;
-            } else {
-                i += 1;
-            }
-        }
-        if start < max_len { raw_columns_offsets.push((start, max_len)); }
-
-        // --- QUEUE POPULATION ---
-        let mut columns_storage: Vec<Vec<VecDeque<(usize, usize)>>> = vec![Vec::new(); skeletons.len()];
-        let mut col_iter = raw_columns_offsets.into_iter();
-
-        for (t_idx, skel) in skeletons.iter().enumerate() {
-            let num_vars = skel.matches(VAR_PLACEHOLDER).count();
-            for _ in 0..num_vars {
-                if let Some((col_start, col_end)) = col_iter.next() {
-                    let mut deque = VecDeque::new();
-                    let mut curr = col_start;
-                    let mut cell_start = curr;
-                    while curr < col_end {
-                        if vars_data_bytes[curr] == 0x01 {
-                            curr += 2;
-                        } else if vars_data_bytes[curr] == row_sep[0] {
-                            deque.push_back((cell_start, curr));
-                            curr += 1;
-                            cell_start = curr;
-                        } else {
-                            curr += 1;
-                        }
+        while cursor < max_len {
+            match memchr2(col_sep, esc_byte, &vars_data_bytes[cursor..]) {
+                Some(pos) => {
+                    let real_pos = cursor + pos;
+                    if vars_data_bytes[real_pos] == esc_byte {
+                        cursor = real_pos + 2;
+                    } else {
+                        global_col_ranges.push((start, real_pos));
+                        cursor = real_pos + 1;
+                        start = cursor;
                     }
-                    deque.push_back((cell_start, curr));
-                    columns_storage[t_idx].push(deque);
-                }
+                },
+                None => { cursor = max_len; }
             }
         }
+        if start < max_len { global_col_ranges.push((start, max_len)); }
 
-        let skel_parts_cache: Vec<Vec<&str>> = skeletons.iter().map(|s| s.split(VAR_PLACEHOLDER_STR).collect()).collect();
+        let mut template_col_map = Vec::with_capacity(skeletons.len());
+        let mut global_col_cursors = Vec::with_capacity(global_col_ranges.len());
+        let mut global_col_limits = Vec::with_capacity(global_col_ranges.len());
 
-        // --- FIX FOR E0502 ---
-        let num_rows_single_template = if id_flag == 3 {
+        for &(s, e) in &global_col_ranges {
+            global_col_cursors.push(s);
+            global_col_limits.push(e);
+        }
+
+        let mut col_alloc_iter = 0..global_col_ranges.len();
+        for skel in &skeletons {
+            let num_vars = skel.matches(VAR_PLACEHOLDER).count();
+            let mut indices = Vec::with_capacity(num_vars);
+            for _ in 0..num_vars {
+                if let Some(idx) = col_alloc_iter.next() { indices.push(idx); }
+            }
+            template_col_map.push(indices);
+        }
+
+        let skel_parts_cache: Vec<Vec<&str>> = skeletons.iter()
+            .map(|s| s.split(VAR_PLACEHOLDER_STR).collect())
+            .collect();
+
+        const BUF_SIZE: usize = 512 * 1024;
+        let mut out_buffer: Vec<u8> = Vec::with_capacity(BUF_SIZE * 2);
+
+        // ====================================================================
+        //  FASE 4: RICOSTRUZIONE (SIMD + OUTER FLUSH)
+        // ====================================================================
+
+        let count_loop = if id_flag == 3 {
              let mut n = num_rows_single_template_header;
-             if n == 0 && !columns_storage.is_empty() && !columns_storage[0].is_empty() {
-                 n = columns_storage[0][0].len();
+             if n == 0 && !global_col_ranges.is_empty() {
+                 let (s, e) = global_col_ranges[0];
+                 let slice = &vars_data_bytes[s..e];
+                 let mut iter_pos = 0;
+                 while iter_pos < slice.len() {
+                     match memchr2(row_sep, esc_byte, &slice[iter_pos..]) {
+                         Some(p) => {
+                             let real = iter_pos + p;
+                             if slice[real] == esc_byte { iter_pos = real + 2; }
+                             else { n += 1; iter_pos = real + 1; }
+                         },
+                         None => break,
+                     }
+                 }
+                 if slice.len() > 0 && slice[slice.len()-1] != row_sep {
+                     if slice.len() < 2 || slice[slice.len()-2] != esc_byte { n += 1; }
+                 }
              }
              n
-        } else { 0 };
+        } else { template_ids.len() as u32 };
 
-        // --- FIX FOR E0499 ---
-        macro_rules! write_stream {
-            ($slice:expr) => {
-                writer.write_all($slice).map_err(|e| e.to_string())?;
-                hasher.update($slice);
+        for i in 0..count_loop {
+            let t_id = if id_flag == 3 { 0 } else { template_ids[i as usize] };
+            if t_id as usize >= skel_parts_cache.len() { continue; }
+
+            let parts = &skel_parts_cache[t_id as usize];
+            let col_indices = &template_col_map[t_id as usize];
+
+            for (p_idx, part) in parts.iter().enumerate() {
+                // 1. Scrittura parte statica
+                if is_latin1 {
+                    if part.is_ascii() { out_buffer.extend_from_slice(part.as_bytes()); }
+                    else { for c in part.chars() { out_buffer.push(c as u8); } }
+                } else {
+                    out_buffer.extend_from_slice(part.as_bytes());
+                }
+
+                // 2. Scrittura variabile (SIMD)
+                if p_idx < col_indices.len() {
+                    let g_idx = col_indices[p_idx];
+                    let cursor = global_col_cursors[g_idx];
+                    let limit = global_col_limits[g_idx];
+
+                    if cursor < limit {
+                        let remaining_slice = &vars_data_bytes[cursor..limit];
+                        let (len, found_sep, found_esc) = match memchr2(row_sep, esc_byte, remaining_slice) {
+                            Some(pos) => {
+                                if remaining_slice[pos] == esc_byte { (pos, false, true) }
+                                else { (pos, true, false) }
+                            },
+                            None => (remaining_slice.len(), false, false)
+                        };
+
+                        if !found_esc {
+                            out_buffer.extend_from_slice(&remaining_slice[..len]);
+                            global_col_cursors[g_idx] = cursor + (if found_sep { len + 1 } else { len });
+                        } else {
+                            // Slow Path (Unescape)
+                            let mut k = 0; let mut local_end = 0; let mut ended = false;
+                            while k < remaining_slice.len() {
+                                let b = remaining_slice[k];
+                                if b == esc_byte { k += 2; }
+                                else if b == row_sep { local_end = k; ended = true; break; }
+                                else { k += 1; }
+                            }
+                            if !ended { local_end = remaining_slice.len(); }
+
+                            let cell_slice = &remaining_slice[..local_end];
+                            let mut r = 0;
+                            while r < cell_slice.len() {
+                                let b = cell_slice[r];
+                                if b == esc_byte && r + 1 < cell_slice.len() {
+                                    let nb = cell_slice[r+1];
+                                    match nb {
+                                        0x01 => out_buffer.push(0x01), 0x00 => out_buffer.push(0x00), 0x03 => out_buffer.push(0x02), _ => out_buffer.push(b),
+                                    }
+                                    r += 2;
+                                } else { out_buffer.push(b); r += 1; }
+                            }
+                            global_col_cursors[g_idx] = cursor + local_end + (if ended { 1 } else { 0 });
+                        }
+                    }
+                }
+            }
+
+            // OUTER FLUSH (Ottimizzazione CPU)
+            if out_buffer.len() >= BUF_SIZE {
+                hasher.update(&out_buffer);
+                writer.write_all(&out_buffer).map_err(|e| e.to_string())?;
+                out_buffer.clear();
             }
         }
 
-        // --- STREAMING RECONSTRUNCTION ---
-        let mut reconstruct_template = |t_id: usize| -> Result<(), String> {
-             if t_id >= skel_parts_cache.len() { return Ok(()); }
-             let parts = &skel_parts_cache[t_id];
-             let queues = &mut columns_storage[t_id];
-
-             for (idx, part) in parts.iter().enumerate() {
-                 if is_latin1 {
-                     for c in part.chars() {
-                         let buf = [c as u8];
-                         write_stream!(&buf);
-                     }
-                 } else {
-                     write_stream!(part.as_bytes());
-                 }
-
-                 // 2. (Unescape + Write)
-                 if idx < queues.len() {
-                     if let Some((s, e)) = queues[idx].pop_front() {
-                         let slice = &vars_data_bytes[s..e];
-                         let mut k = 0;
-                         while k < slice.len() {
-                            if slice[k] == 0x01 && k+1 < slice.len() {
-                                let nb = slice[k+1];
-                                let byte_to_write = if nb == 0x01 { 0x01 }
-                                else if nb == 0x00 { 0x00 }
-                                else if nb == 0x03 { 0x02 }
-                                else { slice[k] }; // Should not happen
-
-                                let buf = [byte_to_write];
-                                write_stream!(&buf);
-                                k += 2;
-                            } else {
-                                let buf = [slice[k]];
-                                write_stream!(&buf);
-                                k += 1;
-                            }
-                        }
-                     }
-                 }
-             }
-             Ok(())
-        };
-
-        if id_flag == 3 {
-            for _ in 0..num_rows_single_template { reconstruct_template(0)?; }
-        } else {
-            for &t_id in &template_ids { reconstruct_template(t_id)?; }
+        // Final Flush del buffer residuo
+        if !out_buffer.is_empty() {
+            hasher.update(&out_buffer);
+            writer.write_all(&out_buffer).map_err(|e| e.to_string())?;
         }
+
+        // CALCOLO TEMPO CAST PRIMA DEL FLUSH SU DISCO
+        let t_cast = t_cast_start.elapsed();
 
         writer.flush().map_err(|e| e.to_string())?;
         let crc = hasher.finalize();
+
+        println!("\n🔍 [CAST DIAGNOSTICS] ---------------------------------");
+        println!("   📦 Backend Time (Load & Unzip):  {:.2?}", t_backend);
+        println!("   ⚡ CAST Logic Time (Rebuild):    {:.2?}", t_cast);
+        println!("   ⏱️  TOTAL WALL CLOCK:             {:.2?}", t_start_total.elapsed());
+        println!("   -----------------------------------------------------\n");
 
         if crc != expected_crc {
             return Err(format!("CRC Check Failed. Expected: {}, Got: {}", expected_crc, crc));

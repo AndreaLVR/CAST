@@ -1,6 +1,5 @@
 use std::cmp;
 use std::io::{Read, Write};
-use std::process::Command;
 use std::fs::{self, File};
 use std::path::Path;
 use std::env;
@@ -8,6 +7,8 @@ use tempfile::Builder;
 use xz2::read::XzDecoder;
 use xz2::write::XzEncoder;
 use xz2::stream::{Stream, MtStreamBuilder, Check, LzmaOptions, Filters};
+use std::process::{Command, Stdio};
+use std::thread;
 
 use crate::cast::{NativeCompressor, NativeDecompressor, CASTCompressor, CASTDecompressor};
 
@@ -136,10 +137,20 @@ pub struct LzmaDecompressorBackend;
 
 impl NativeDecompressor for LzmaDecompressorBackend {
     fn decompress(&self, data: &[u8]) -> Vec<u8> {
-        // EXACT LOGIC FROM ORIGINAL decompress_buffer_native
         if data.is_empty() { return Vec::new(); }
+
         let mut decompressor = XzDecoder::new(data);
-        let mut output = Vec::with_capacity(data.len() * 3);
+
+        // MODIFICA SICURA:
+        // 1. Usiamo un moltiplicatore 6x (più realistico per CSV rispetto a 3x)
+        let estimated = data.len().saturating_mul(6);
+
+        // 2. SAFETY CAP: Non pre-allocare mai più di 2 GB alla cieca.
+        // Se il file è più grande, Rust riallocherà automaticamente.
+        // Questo previene i crash "Out of Memory" su macchine standard.
+        let safe_capacity = std::cmp::min(estimated, 2 * 1024 * 1024 * 1024);
+
+        let mut output = Vec::with_capacity(safe_capacity);
         decompressor.read_to_end(&mut output).expect("Decompression Error");
         output
     }
@@ -209,32 +220,50 @@ impl NativeDecompressor for SevenZipDecompressorBackend {
     fn decompress(&self, data: &[u8]) -> Vec<u8> {
         if data.is_empty() { return Vec::new(); }
 
-        let temp_dir = Builder::new()
-            .prefix("cast_lzma_dec_")
-            .tempdir()
-            .expect("Failed to create temp directory");
+        let cmd = get_7z_cmd();
 
-        let tmp_in = temp_dir.path().join("input.xz");
+        // 1. Spawniamo 7-Zip configurato per leggere da Stdin (-si) e scrivere su Stdout (-so)
+        // Aggiungiamo -txz esplicito perché da stdin non può indovinare l'estensione
+        let mut child = Command::new(&cmd)
+            .args(&["e", "-txz", "-si", "-so", "-y", "-bb0"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit()) // Vediamo gli errori in console se capita
+            .spawn()
+            .expect("Failed to spawn 7-Zip");
 
-        {
-            let mut f = File::create(&tmp_in).unwrap();
-            f.write_all(data).unwrap();
-            f.flush().unwrap();
+        // 2. Gestione Input (Scrittura su Stdin in un thread separato per evitare deadlock)
+        // Clona i dati compressi (costo basso, sono "piccoli") per passarli al thread
+        let input_data = data.to_vec();
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+
+        thread::spawn(move || {
+            stdin.write_all(&input_data).ok();
+            // stdin viene chiuso automaticamente qui (drop), segnalando EOF a 7z
+        });
+
+        // 3. Gestione Output (Lettura da Stdout con Pre-allocazione)
+        // Stimiamo un ratio di compressione 5:1 per evitare troppe riallocazioni
+        // (La Native usava *3, qui osiamo *5 per sicurezza sulle performance)
+        let estimated_size = data.len() * 5;
+        let mut output_data = Vec::with_capacity(estimated_size);
+
+        if let Some(mut stdout) = child.stdout.take() {
+            // Leggiamo tutto lo stream direttamente nel buffer finale
+            if let Err(e) = stdout.read_to_end(&mut output_data) {
+                eprintln!("Error reading 7z output: {}", e);
+                return Vec::new();
+            }
         }
 
-        let cmd = get_7z_cmd();
-        let output = Command::new(&cmd)
-            .args(&["e"])
-            .arg(&tmp_in)
-            .args(&["-so", "-y"])
-            .output();
+        // Attendiamo che il processo finisca
+        let status = child.wait().expect("Failed to wait on 7z");
 
-        match output {
-            Ok(o) => o.stdout,
-            Err(e) => {
-                eprintln!("Decompression Error: {}", e);
-                Vec::new()
-            },
+        if status.success() {
+            output_data
+        } else {
+            eprintln!("7-Zip returned error status");
+            Vec::new() // O gestire l'errore meglio se vuoi
         }
     }
 }
