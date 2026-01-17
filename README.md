@@ -34,7 +34,7 @@ This repository contains the source code and benchmarking tools used to produce 
 * 🧠 **Schema-less Inference**: Uses an **Optimized Adaptive Parser** to automatically detect repetitive patterns in **arbitrary structured and semi-structured text streams**, operating purely on syntax without relying on file extensions or predefined schemas.
 * 📦 **Enhanced Compression Density**: Maximizes efficiency for Cold Storage & Archival by significantly reducing disk footprint, while simultaneously optimizing Bandwidth-Limited Transmission (e.g., Edge-to-Cloud logging). Ideally paired with high-ratio backends like LZMA2 to minimize infrastructure costs.
 * 🚀 **Throughput Efficiency**: For **structured and semi-structured inputs**, the reduced entropy of the columnar streams lowers the backend encoding cost, often resulting in a net reduction of total execution time despite the parsing overhead.
-* 🛠️ **Memory Scalability & Safety**: Features a **Block-Based Streaming** Architecture. Memory usage during restoration is **bounded by the compressed block size**, ensuring OOM immunity when explicit **Stream Chunking** is enabled. Includes configurable chunking and dictionary size control to fit constrained environments.
+* 🛠️ **Memory Scalability & Safety**: Features a **Block-Based Streaming Architecture**. The engine processes data in chunks and **streams the output incrementally**, keeping memory usage **bounded by the compressed block size** (plus a small constant buffer). This ensures OOM immunity during restoration—provided explicit **Stream Chunking** was enabled during compression—regardless of the total output size.
 * 🛡️ **Robustness**: Includes a **Binary Guard** heuristic to automatically detect and **bypass** non-structured or binary files, preventing processing overhead and ensuring data integrity.
 * 🔭 **Random Access Architecture [EXPERIMENTAL PREVIEW]**: The internal architecture is inherently **Block-Based**, providing a foundation for seekability. We have **just started investigation and development** on an **Indexed Row Group** format to enable efficient Random Access (e.g., "fetch lines 1000-2000") without compromising the primary goal of compression density. This is currently a strictly experimental proof-of-concept.
 
@@ -55,8 +55,13 @@ It requires **no installation** or environment configuration: **simply download 
 > **👉 Get Started:**
 > Detailed command references are strictly documented in the respective directories to ensure clarity:
 > * **[📂 Rust Implementation](./rust/)** (**Recommended**): Instructions for the official high-performance binaries.
-> * **[📂 Python Implementation](./py/)** (**Educational Reference**): An implementation provided **solely for logic validation and research**.
+> * **[📂 Python Implementation](./py/)** (**Conceptual Reference**): An implementation provided **solely for logic validation and research**.
 > * **[📂 Random Access Preview](./rust_random_access_PREVIEW/)** (**Investigation & Development**): Documentation for the Early Prototype (Row Groups & O(1) Seeking).
+
+### ⚡ Smart Defaults
+The **Rust Engine** automatically adopts a **Hybrid Strategy** to give you the best performance out of the box:
+* **Compression:** Defaults to **System Mode (7-Zip)** (if available) to maximize multi-threaded throughput.
+* **Decompression:** Defaults to **Native Mode** to minimize process latency and overhead.
 
 ---
 
