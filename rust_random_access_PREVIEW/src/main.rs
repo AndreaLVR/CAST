@@ -101,19 +101,32 @@ fn main() {
     println!("       Author: Andrea Olivari");
     println!("       GitHub: https://github.com/AndreaLVR/CAST/tree/main/rust_random_access_PREVIEW\n");
 
-    let (use_7zip, backend_label) = match mode_arg.as_deref() {
-        Some("native") => (false, "Native (xz2)".to_string()),
-        Some("7zip") => {
-            if let Some(path) = try_find_7zip_path() {
-                (true, format!("7-Zip (External) [Found at: {}]", path))
-            } else { (false, "Native (xz2) [Fallback: 7z not found]".to_string()) }
-        },
-        _ => {
-            if let Some(path) = try_find_7zip_path() {
-                (true, format!("7-Zip (External) [Found at: {}]", path))
-            } else { (false, "Native (xz2) [Fallback]".to_string()) }
-        }
+    // ==================================================================================
+    //  BACKEND SELECTION LOGIC (Hybrid Strategy)
+    // ==================================================================================
+
+    let has_7zip = try_find_7zip_path().is_some();
+    let user_forced_7zip = mode_arg.as_deref() == Some("7zip");
+    let user_forced_native = mode_arg.as_deref() == Some("native");
+
+    let use_7zip_comp = if user_forced_native {
+        false
+    } else if user_forced_7zip {
+        if !has_7zip { eprintln!("[!] Error: 7-Zip mode forced but binary not found."); std::process::exit(1); }
+        true
+    } else {
+        has_7zip
     };
+
+    let use_7zip_decomp = if user_forced_7zip {
+        if !has_7zip { eprintln!("[!] Error: 7-Zip mode forced but binary not found."); std::process::exit(1); }
+        true
+    } else {
+        false
+    };
+
+    let backend_label_comp = if use_7zip_comp { "7-Zip (System)" } else { "Native (xz2)" };
+    let backend_label_decomp = if use_7zip_decomp { "7-Zip (System)" } else { "Native (xz2)" };
 
     match mode_cmd.as_str() {
         "-c" => {
@@ -125,16 +138,16 @@ fn main() {
             println!("\n[*]  Starting Compression...");
             println!("       Input:       {}", input_path);
             println!("       Output:      {}", output_path);
-            println!("       Backend:     {}", backend_label);
+            println!("       Backend:     {}", backend_label_comp);
 
             let final_dict = dict_size_bytes.unwrap_or(128 * 1024 * 1024);
-            do_compress(input_path, output_path, use_multithread, final_dict, chunk_size_bytes, use_7zip);
+            do_compress(input_path, output_path, use_multithread, final_dict, chunk_size_bytes, use_7zip_comp);
 
             if verify_flag {
                 println!("\n------------------------------------------------");
                 println!("[*]  Verifying...");
                 std::thread::sleep(std::time::Duration::from_millis(500));
-                do_verify_stream(output_path, use_7zip);
+                do_verify_stream(output_path, use_7zip_decomp);
             }
         },
         "-d" => {
@@ -148,8 +161,8 @@ fn main() {
             } else {
                 println!("\n[*]  Starting Full Decompression...");
             }
-            println!("       Backend:     {}", backend_label);
-            do_decompress(input_path, output_path, target_rows, use_7zip);
+            println!("       Backend:     {}", backend_label_decomp);
+            do_decompress(input_path, output_path, target_rows, use_7zip_decomp);
         },
         "-v" | "--verify" => {
              let target = if !input_path.is_empty() { input_path } else { &args[2] };
@@ -159,7 +172,8 @@ fn main() {
                  return;
              }
              println!("\n[*]  Verifying: {}", target);
-             do_verify_stream(target, use_7zip);
+             println!("       Backend:     {}", backend_label_decomp);
+             do_verify_stream(target, use_7zip_decomp);
         }
         _ => print_usage(exe_name),
     }
@@ -169,16 +183,15 @@ fn main() {
 fn estimate_avg_row_size(path: &str) -> usize {
     let f = match File::open(path) {
         Ok(f) => f,
-        Err(_) => return 200, // Fallback se non apre il file
+        Err(_) => return 200,
     };
     let reader = io::BufReader::new(f);
     let mut total_bytes = 0;
     let mut count = 0;
 
-    // Campiona fino a 1000 righe
     for line in reader.lines().take(1000) {
         if let Ok(l) = line {
-            total_bytes += l.len() + 1; // +1 per il newline
+            total_bytes += l.len() + 1;
             count += 1;
         }
     }
@@ -224,7 +237,7 @@ fn print_usage(exe_name: &str) {
           -d <in> <out>      Decompress CAST file to original format\n  \
           -v <file>          Verify the integrity of a CAST file\n\n\
         Options:\n  \
-          --mode <TYPE>      Backend selection: 'native' or '7zip'\n                         (Default: Auto-detect 7zip, fallback to native)\n  \
+          --mode <TYPE>      Backend selection: 'native' or '7zip'\n                         (Default: Hybrid - 7zip for Comp, Native for Decomp)\n  \
           --multithread      Enable parallel compression for higher speed\n  \
           --chunk-size <S>   Split input in chunks (e.g., 64MB) to enable Indexing & Random Access.\n                         Default: Solid Mode (Max Compression, NO INDEX/SEEKING))\n  \
           --dict-size <S>    Set LZMA Dictionary size (Default: 128MB)\n  \
@@ -256,7 +269,6 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, dict_size
     let mut compressor = CASTLzmaCompressor::new(backend);
 
     if let Some(bytes) = chunk_bytes {
-        // [FIX] Ora usiamo la stima intelligente basata sul file reale
         let avg_row_size = estimate_avg_row_size(input_path);
         let estimated_rows = std::cmp::max(100, bytes / avg_row_size);
 
@@ -269,7 +281,6 @@ fn do_compress(input_path: &str, output_path: &str, multithread: bool, dict_size
         println!("       Chunking:    DEFAULT (Solid or ~100k rows)");
     }
 
-    // Callback per stampare i chunk
     let result = compressor.compress_stream(f_in, &mut writer, |chunk_idx, bytes_read| {
         print!("\r       Processing Chunk #{} (Read: {})... ", chunk_idx, format_bytes(bytes_read as usize));
         std::io::stdout().flush().unwrap();

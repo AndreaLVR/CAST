@@ -135,7 +135,6 @@ pub struct LzmaDecompressorBackend;
 
 impl NativeDecompressor for LzmaDecompressorBackend {
     fn decompress(&self, data: &[u8]) -> Vec<u8> {
-        // EXACT LOGIC FROM ORIGINAL decompress_buffer_native
         if data.is_empty() { return Vec::new(); }
         let mut decompressor = XzDecoder::new(data);
         let mut output = Vec::with_capacity(data.len() * 3);
@@ -175,10 +174,9 @@ impl NativeCompressor for SevenZipBackend {
             .spawn()
             .expect("Failed to spawn 7-Zip");
 
-        let input_data = data.to_vec(); // Clone per il thread (Safe)
+        let input_data = data.to_vec();
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
 
-        // Thread scrittore (Anti-Deadlock)
         thread::spawn(move || {
             stdin.write_all(&input_data).ok();
         });
@@ -206,7 +204,6 @@ impl NativeDecompressor for SevenZipDecompressorBackend {
 
         let cmd = get_7z_cmd();
 
-        // PIPE MODE: -si (stdin), -so (stdout)
         let mut child = Command::new(&cmd)
             .args(&["e", "-txz", "-si", "-so", "-y", "-bb0"])
             .stdin(Stdio::piped())
@@ -215,15 +212,13 @@ impl NativeDecompressor for SevenZipDecompressorBackend {
             .spawn()
             .expect("Failed to spawn 7-Zip");
 
-        let input_data = data.to_vec(); // Clone per il thread
+        let input_data = data.to_vec();
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
 
-        // Thread scrittore
         thread::spawn(move || {
             stdin.write_all(&input_data).ok();
         });
 
-        // Stimiamo la dimensione (euristica 6x) per evitare riallocazioni frequenti
         let estimated = data.len().saturating_mul(6);
         let safe_capacity = std::cmp::min(estimated, 2 * 1024 * 1024 * 1024); // Cap 2GB
         let mut output_data = Vec::with_capacity(safe_capacity);
