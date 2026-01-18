@@ -78,7 +78,7 @@ To provide a comprehensive evaluation, all official benchmarks were conducted us
 The engine supports dual operating configurations, controllable via the `--mode` CLI argument:
 
 1. **Native Mode** (`--mode native`): Standalone, dependency-free. Used to measure **Algorithmic Efficiency (Compression Ratio)** without external overhead.
-2. **System Mode** (`--mode 7zip`): Feeds data to the external 7-Zip executable (LZMA2). Used to demonstrate **Production Throughput** and scalability in real-world pipelines. This configuration achieves **significantly higher speeds** with **negligible compression loss** compared to the Native version.
+2. **System Mode** (`--mode 7zip`): Pipes data to the external 7-Zip executable (LZMA2). Used to demonstrate **Production Throughput** and scalability in real-world pipelines. This configuration achieves **significantly higher speeds** with **negligible compression loss** compared to the Native version.
 
 > 📂 **Data Sources:** Benchmarks were performed on real-world datasets sourced from Kaggle and Open Data repositories. For a full list of source URLs and descriptions, please refer to [DATASETS.md](./DATASETS.md).
 
