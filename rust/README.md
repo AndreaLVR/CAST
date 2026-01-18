@@ -17,7 +17,7 @@ This directory contains the high-performance Rust port of the CAST algorithm.
 
 This unified implementation supports two distinct operating modes (backends) within a single executable:
 1.  **Native Mode (Standalone):** Uses embedded Rust libraries (`xz2`) for maximum portability, low latency, and zero runtime dependencies.
-2.  **7-Zip Mode (High Performance):** Acts as a smart wrapper around an external `7z` executable to leverage its optimized multi-threading engine.
+2.  **7-Zip Mode (High Performance):** Acts as a smart wrapper around an external **7z** executable, piping data **entirely in-memory** to leverage its optimized multi-threading engine without disk I/O overhead.
 
 ---
 
@@ -58,7 +58,7 @@ cast -c <input_file> <output_file> [options]
     * `7zip`: Forces usage of external 7-Zip. Fails if not found.
     * `native`: Forces usage of internal library (single-threaded by default).
 * `--multithread`: Enables multi-threading for the **Native** backend. (7-Zip mode is multi-threaded by default).
-* `--chunk-size <SIZE>`: **RAM Saver (Input).** Splits input into chunks (e.g., `100MB`, `1GB`) to strictly bound memory usage during compression. Critical for files larger than available RAM.
+* `--chunk-size <SIZE>`: **Memory Guard**. Splits input into independent blocks (e.g., `64MB`, `256MB`) to strictly bound RAM usage `(O(ChunkSize))`. Recommended for files larger than available system memory.
 * `--dict-size <SIZE>`: Sets LZMA Dictionary Size (Default: 128MB).
 * `-v` or `--verify`: **Security Check.** Immediately verifies the archive after creation.
 
@@ -95,7 +95,7 @@ cast -d archive.cast restored.csv --mode 7zip
 ```
 
 ### 3. Verification (Standalone)
-Checks integrity (CRC32 & Structure) without writing to disk.
+Validates archive integrity (CRC32 & Structure) via a full in-memory streaming check, ensuring the data is recoverable without extracting files to disk.
 
 ```bash
 # Auto-detect
