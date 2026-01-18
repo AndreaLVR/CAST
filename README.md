@@ -183,7 +183,7 @@ This repository serves as a **scientific Proof of Concept (PoC)** to demonstrate
 * **Goal:** **High-Performance, Density & Scalability.**
 * **Method:** A performance-oriented **research prototype** featuring a **Zero-Copy Parsing Strategy**, **Multithreading**, and **Stream Chunking** (compression) paired with **Streaming I/O** (decompression) to handle gigabyte-sized files with a constant memory footprint.* **Unified Architecture:** The engine supports dynamic backend selection via the `--mode` flag:
     * **Native Mode:** Standalone implementation. Used to validate the **Algorithmic Efficiency (Maximum Density)** presented in Table 1.
-    * **System Mode (7-Zip):** Invokes the external `7-Zip` CLI. Used to validate **Production Throughput**.
+    * **System Mode (7-Zip):** Invokes the external `7-Zip` CLI via **streaming pipes**, performing operations entirely in-memory to eliminate disk I/O overhead. Used to validate **Production Throughput**.
       > **💡 Recommendation:** This is the preferred variant for compression. The Rust engine automatically selects this mode by default (if 7z is detected) to ensure the best out-of-the-box performance.
 * **Pros:**
     * **Speed:** significantly faster on complex datasets, leveraging Rust's zero-cost abstractions.
