@@ -1,10 +1,9 @@
 use std::cmp;
 use std::io::{Read, Write};
-use std::process::Command;
-use std::fs::{self, File};
+use std::process::{Command, Stdio};
+use std::thread;
 use std::path::Path;
 use std::env;
-use tempfile::Builder;
 use xz2::read::XzDecoder;
 use xz2::write::XzEncoder;
 use xz2::stream::{Stream, MtStreamBuilder, Check, LzmaOptions, Filters};
@@ -164,42 +163,38 @@ impl NativeCompressor for SevenZipBackend {
     fn compress(&self, data: &[u8]) -> Vec<u8> {
         if data.is_empty() { return Vec::new(); }
 
-        let temp_dir = Builder::new()
-            .prefix("cast_lzma_")
-            .tempdir()
-            .expect("Failed to create temp directory");
-
-        let tmp_in = temp_dir.path().join("input.bin");
-        let tmp_out = temp_dir.path().join("output.xz");
-
-        {
-            let mut f = File::create(&tmp_in).expect("Cannot create temp input");
-            f.write_all(data).expect("Cannot write temp input");
-            f.flush().unwrap();
-            f.sync_all().unwrap();
-        }
-
         let dict_arg = format!("-m0=lzma2:d{}b", self.dict_size);
         let cmd = get_7z_cmd();
 
-        let output = Command::new(&cmd)
-            .args(&["a", "-txz", "-mx=9", "-mmt=on", &dict_arg, "-y", "-bb0"])
-            .arg(&tmp_out)
-            .arg(&tmp_in)
-            .output();
+        // PIPE MODE: -si (stdin), -so (stdout), -an (no name)
+        let mut child = Command::new(&cmd)
+            .args(&["a", "-txz", "-mx=9", "-mmt=on", &dict_arg, "-si", "-so", "-an", "-y", "-bb0"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .expect("Failed to spawn 7-Zip");
 
-        match output {
-            Ok(out) => {
-                if !out.status.success() {
-                    panic!("7-Zip Error: {}", String::from_utf8_lossy(&out.stderr));
-                }
-            },
-            Err(e) => panic!("Exec Error: {}", e)
+        let input_data = data.to_vec(); // Clone per il thread (Safe)
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+
+        // Thread scrittore (Anti-Deadlock)
+        thread::spawn(move || {
+            stdin.write_all(&input_data).ok();
+        });
+
+        let mut output_data = Vec::new();
+        if let Some(mut stdout) = child.stdout.take() {
+            stdout.read_to_end(&mut output_data).expect("Failed to read 7z stdout");
         }
 
-        let result = fs::read(&tmp_out).unwrap_or_else(|_| Vec::new());
+        let status = child.wait().expect("Failed to wait on 7z");
 
-        result
+        if !status.success() {
+            panic!("7-Zip Compression Error");
+        }
+
+        output_data
     }
 }
 
@@ -209,32 +204,44 @@ impl NativeDecompressor for SevenZipDecompressorBackend {
     fn decompress(&self, data: &[u8]) -> Vec<u8> {
         if data.is_empty() { return Vec::new(); }
 
-        let temp_dir = Builder::new()
-            .prefix("cast_lzma_dec_")
-            .tempdir()
-            .expect("Failed to create temp directory");
+        let cmd = get_7z_cmd();
 
-        let tmp_in = temp_dir.path().join("input.xz");
+        // PIPE MODE: -si (stdin), -so (stdout)
+        let mut child = Command::new(&cmd)
+            .args(&["e", "-txz", "-si", "-so", "-y", "-bb0"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .expect("Failed to spawn 7-Zip");
 
-        {
-            let mut f = File::create(&tmp_in).unwrap();
-            f.write_all(data).unwrap();
-            f.flush().unwrap();
+        let input_data = data.to_vec(); // Clone per il thread
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+
+        // Thread scrittore
+        thread::spawn(move || {
+            stdin.write_all(&input_data).ok();
+        });
+
+        // Stimiamo la dimensione (euristica 6x) per evitare riallocazioni frequenti
+        let estimated = data.len().saturating_mul(6);
+        let safe_capacity = std::cmp::min(estimated, 2 * 1024 * 1024 * 1024); // Cap 2GB
+        let mut output_data = Vec::with_capacity(safe_capacity);
+
+        if let Some(mut stdout) = child.stdout.take() {
+            if let Err(e) = stdout.read_to_end(&mut output_data) {
+                eprintln!("Error reading 7z output: {}", e);
+                return Vec::new();
+            }
         }
 
-        let cmd = get_7z_cmd();
-        let output = Command::new(&cmd)
-            .args(&["e"])
-            .arg(&tmp_in)
-            .args(&["-so", "-y"])
-            .output();
+        let status = child.wait().expect("Failed to wait on 7z");
 
-        match output {
-            Ok(o) => o.stdout,
-            Err(e) => {
-                eprintln!("Decompression Error: {}", e);
-                Vec::new()
-            },
+        if status.success() {
+            output_data
+        } else {
+            eprintln!("\n[!] CRITICAL ERROR: 7-Zip backend returned a failure status.");
+            std::process::exit(1);
         }
     }
 }
