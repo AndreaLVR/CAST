@@ -1,9 +1,7 @@
 use std::cmp;
 use std::io::{Read, Write};
-use std::fs::{self, File};
 use std::path::Path;
 use std::env;
-use tempfile::Builder;
 use xz2::read::XzDecoder;
 use xz2::write::XzEncoder;
 use xz2::stream::{Stream, MtStreamBuilder, Check, LzmaOptions, Filters};
@@ -173,44 +171,56 @@ impl SevenZipBackend {
 
 impl NativeCompressor for SevenZipBackend {
     fn compress(&self, data: &[u8]) -> Vec<u8> {
+        // 1. Check veloce: se non c'è nulla, esci subito.
         if data.is_empty() { return Vec::new(); }
 
-        let temp_dir = Builder::new()
-            .prefix("cast_lzma_")
-            .tempdir()
-            .expect("Failed to create temp directory");
-
-        let tmp_in = temp_dir.path().join("input.bin");
-        let tmp_out = temp_dir.path().join("output.xz");
-
-        {
-            let mut f = File::create(&tmp_in).expect("Cannot create temp input");
-            f.write_all(data).expect("Cannot write temp input");
-            f.flush().unwrap();
-            f.sync_all().unwrap();
-        }
-
+        // Preparazione comando
         let dict_arg = format!("-m0=lzma2:d{}b", self.dict_size);
         let cmd = get_7z_cmd();
 
-        let output = Command::new(&cmd)
-            .args(&["a", "-txz", "-mx=9", "-mmt=on", &dict_arg, "-y", "-bb0"])
-            .arg(&tmp_out)
-            .arg(&tmp_in)
-            .output();
+        // 2. AVVIO PROCESSO (PIPE MODE)
+        // -si: Leggi Input da Stdin (invece che da file)
+        // -so: Scrivi Output su Stdout (invece che su file)
+        // -an: "No Archive Name" (necessario quando si usa -so per dire che non c'è un nome file)
+        let mut child = Command::new(&cmd)
+            .args(&["a", "-txz", "-mx=9", "-mmt=on", &dict_arg, "-si", "-so", "-an", "-y", "-bb0"])
+            .stdin(Stdio::piped())  // Apriamo il canale di entrata
+            .stdout(Stdio::piped()) // Apriamo il canale di uscita
+            .stderr(Stdio::inherit()) // Errori in console (utile per debug)
+            .spawn()
+            .expect("Failed to spawn 7-Zip");
 
-        match output {
-            Ok(out) => {
-                if !out.status.success() {
-                    panic!("7-Zip Error: {}", String::from_utf8_lossy(&out.stderr));
-                }
-            },
-            Err(e) => panic!("Exec Error: {}", e)
+        // 3. PREPARAZIONE DATI PER IL THREAD
+        // Dobbiamo clonare i dati in un Vec per poterli "spostare" (move) dentro il thread.
+        // Nota: Anche prima con i file temporanei allocavi memoria leggendo fs::read, quindi la RAM usata è simile.
+        let input_data = data.to_vec();
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+
+        // 4. IL THREAD ANTI-DEADLOCK (Core della sicurezza)
+        // Spostiamo la scrittura in un thread separato.
+        // In questo modo il Main Thread è subito libero di andare al punto 5 a leggere.
+        thread::spawn(move || {
+            // Scriviamo tutto. Se 7-Zip chiude prima (errore), .ok() ignora il crash del thread.
+            stdin.write_all(&input_data).ok();
+            // Qui la pipe stdin si chiude automaticamente quando il thread finisce.
+        });
+
+        // 5. LETTURA OUTPUT (Main Thread)
+        // Leggiamo l'output mentre il thread sopra sta ancora scrivendo. Flusso continuo.
+        let mut output_data = Vec::new();
+        if let Some(mut stdout) = child.stdout.take() {
+            stdout.read_to_end(&mut output_data).expect("Failed to read 7z stdout");
         }
 
-        let result = fs::read(&tmp_out).unwrap_or_else(|_| Vec::new());
+        // 6. CHIUSURA E CONTROLLO
+        let status = child.wait().expect("Failed to wait on 7z");
 
-        result
+        if !status.success() {
+            // Se 7-Zip fallisce, andiamo in panico come facevi prima
+            panic!("7-Zip Compression Error: Process returned failure code");
+        }
+
+        output_data
     }
 }
 
