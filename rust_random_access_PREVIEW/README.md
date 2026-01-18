@@ -1,6 +1,5 @@
 # CAST: Random Access Preview (Experimental WIP)
 
-
 ### ⚠️ Early Research Prototype
 
 > **Please Read:**
@@ -51,7 +50,7 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 
 > **🚧 Current Limitations:**
 > 1. **Querying:** The random access mechanism is currently bound to **Row Indexing** (e.g., "Get rows 100 to 200"). Advanced querying (SQL-like, filtering) is not yet implemented.
-> 2. **Unoptimized Decompression Engine:** This prototype currently uses a **simplified reconstruction logic** (byte-by-byte writing) and lacks the **Buffered Streaming I/O** and memory optimizations present in the [Standard Version](../rust). Consequently, **full-file decompression** is currently slower than the main engine. This does **not** affect Random Access speed, which remains almost instantaneous.
+> 2. **Unoptimized Reconstruction:** While this prototype uses in-memory piping for the backend, the reconstruction engine lacks the **Buffered Streaming I/O** optimizations present in the [Standard Version](../rust). Consequently, **full-file decompression** is slower than the main engine due to unbuffered row reassembly. This does **not** affect Random Access speed, which remains almost instantaneous.
 
 ## 📊 Performance Trade-offs (Preliminary)
 
@@ -59,13 +58,13 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 
 * **Compression Ratio:** Minimal impact. Most datasets show a **0% to 7% size increase**. Highly dense/massive logs (e.g., HDFS) may see up to ~13% increase due to independent dictionary resets.
 * **Compression Speed:** **Variable Overhead.** While some datasets show negligible difference, others exhibit a **15% to 40% increase in compression time**. This is due to the computational cost of managing independent dictionary contexts and repeatedly flushing the stream buffers.
-* **Decompression Speed (Full File):** **Benchmarks Pending Integration.** We are currently porting the high-performance decompression pipeline (from the Standard Engine) to this experimental branch. Formal benchmarks will be recalculated and published immediately upon completion of this integration.
-* **Random Access:** **O(1) complexity**. Seeking and extracting a small range is instantaneous (**< 0.5s**), regardless of total file size (GBs or TBs).
+* **Decompression Speed (Full File):** **Benchmarks Omitted (Unoptimized).** This prototype currently relies on a simplified unbuffered reconstruction engine. Since it lacks the high-performance Streaming I/O of the Standard version, full-file restoration benchmarks are not representative of the algorithmic potential and have been omitted.
+* **Random Access:** **O(1) complexity**. Seeking and extracting a small range is instantaneous (**< 1s**), regardless of total file size (GBs or TBs).
 
 ### Visual Benchmarks
 The following charts visualize the **preliminary results** obtained during this early experimental phase.
 
-> **⚠️ Disclaimer:** These benchmarks are **not exhaustive** and cover only a limited subset of datasets to provide an **initial visual impression** of the performance trade-offs. All tests were executed in **System Mode**. A comprehensive and rigorous analysis will be published once the random access implementation reaches maturity.
+> **⚠️ Disclaimer:** These benchmarks are **not exhaustive** and cover only a limited subset of datasets to provide an **initial visual impression** of the performance trade-offs.
 
 #### 1. Compression Size Comparison
 This chart visualizes the "cost" of indexing. As shown, the size increase is generally minimal, keeping CAST highly competitive against general-purpose compressors.
@@ -74,9 +73,8 @@ This chart visualizes the "cost" of indexing. As shown, the size increase is gen
 
 #### 2. Full Decompression Speed Comparison
 
-> **🚧 Update in Progress:**
-> The full-file decompression benchmarks are currently **paused**.
-> We are actively merging the optimized **Streaming I/O & Pipe Architecture** from the main branch into this prototype. New performance charts will be generated and uploaded as soon as the porting process is finalized.
+> **🚧 Not Available:**
+> Full-file decompression benchmarks are omitted because the reconstruction engine in this preview **lacks the Buffered Streaming I/O optimizations** present in the main branch. Comparisons would be inaccurate until engineering parity is reached.
 
 > **⚡ Important:** Regardless of full-file speed, if you use the `--rows` parameter to extract specific ranges, **the operation is near-instantaneous** regardless of the file size, as it only processes the relevant chunk.
 
@@ -107,7 +105,7 @@ Use `--chunk-size` to define the granularity. A size of **64MB** or **128MB** is
 ./cast_ra_preview -c data.log archive.cast --chunk-size 64MB -v
 ```
 
-### 2. Random Access 
+### 2. Random Access
 Extract specific rows using human-readable **1-based indexing** (like typical text editors). CAST handles the offset calculation internally.
 
 ```bash
