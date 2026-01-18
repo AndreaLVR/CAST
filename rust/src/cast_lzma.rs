@@ -139,13 +139,8 @@ impl NativeDecompressor for LzmaDecompressorBackend {
 
         let mut decompressor = XzDecoder::new(data);
 
-        // MODIFICA SICURA:
-        // 1. Usiamo un moltiplicatore 6x (più realistico per CSV rispetto a 3x)
         let estimated = data.len().saturating_mul(6);
 
-        // 2. SAFETY CAP: Non pre-allocare mai più di 2 GB alla cieca.
-        // Se il file è più grande, Rust riallocherà automaticamente.
-        // Questo previene i crash "Out of Memory" su macchine standard.
         let safe_capacity = std::cmp::min(estimated, 2 * 1024 * 1024 * 1024);
 
         let mut output = Vec::with_capacity(safe_capacity);
@@ -171,52 +166,38 @@ impl SevenZipBackend {
 
 impl NativeCompressor for SevenZipBackend {
     fn compress(&self, data: &[u8]) -> Vec<u8> {
-        // 1. Check veloce: se non c'è nulla, esci subito.
+        // 1. QUICK CHECK
         if data.is_empty() { return Vec::new(); }
 
-        // Preparazione comando
         let dict_arg = format!("-m0=lzma2:d{}b", self.dict_size);
         let cmd = get_7z_cmd();
 
-        // 2. AVVIO PROCESSO (PIPE MODE)
-        // -si: Leggi Input da Stdin (invece che da file)
-        // -so: Scrivi Output su Stdout (invece che su file)
-        // -an: "No Archive Name" (necessario quando si usa -so per dire che non c'è un nome file)
         let mut child = Command::new(&cmd)
             .args(&["a", "-txz", "-mx=9", "-mmt=on", &dict_arg, "-si", "-so", "-an", "-y", "-bb0"])
-            .stdin(Stdio::piped())  // Apriamo il canale di entrata
-            .stdout(Stdio::piped()) // Apriamo il canale di uscita
-            .stderr(Stdio::inherit()) // Errori in console (utile per debug)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
             .spawn()
             .expect("Failed to spawn 7-Zip");
 
-        // 3. PREPARAZIONE DATI PER IL THREAD
-        // Dobbiamo clonare i dati in un Vec per poterli "spostare" (move) dentro il thread.
-        // Nota: Anche prima con i file temporanei allocavi memoria leggendo fs::read, quindi la RAM usata è simile.
         let input_data = data.to_vec();
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
 
-        // 4. IL THREAD ANTI-DEADLOCK (Core della sicurezza)
-        // Spostiamo la scrittura in un thread separato.
-        // In questo modo il Main Thread è subito libero di andare al punto 5 a leggere.
+        // 4. THREAD ANTI-DEADLOCK
         thread::spawn(move || {
-            // Scriviamo tutto. Se 7-Zip chiude prima (errore), .ok() ignora il crash del thread.
             stdin.write_all(&input_data).ok();
-            // Qui la pipe stdin si chiude automaticamente quando il thread finisce.
         });
 
-        // 5. LETTURA OUTPUT (Main Thread)
-        // Leggiamo l'output mentre il thread sopra sta ancora scrivendo. Flusso continuo.
+        // 5. OUTPUT READING (Main Thread)
         let mut output_data = Vec::new();
         if let Some(mut stdout) = child.stdout.take() {
             stdout.read_to_end(&mut output_data).expect("Failed to read 7z stdout");
         }
 
-        // 6. CHIUSURA E CONTROLLO
+        // 6. CLOSE AND CHECK
         let status = child.wait().expect("Failed to wait on 7z");
 
         if !status.success() {
-            // Se 7-Zip fallisce, andiamo in panico come facevi prima
             panic!("7-Zip Compression Error: Process returned failure code");
         }
 
@@ -236,7 +217,7 @@ impl NativeDecompressor for SevenZipDecompressorBackend {
             .args(&["e", "-txz", "-si", "-so", "-y", "-bb0"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit()) // Vediamo gli errori in console se capita
+            .stderr(Stdio::inherit())
             .spawn()
             .expect("Failed to spawn 7-Zip");
 

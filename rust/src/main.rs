@@ -246,9 +246,9 @@ fn print_usage(exe_name: &str) {
           -v, --verify       (During compression) Run an immediate integrity check\n  \
           -h, --help         Show this help message\n\n\
         Examples:\n  \
-          {} -c data.csv archive.gtf --mode 7zip\n  \
-          {} -c large_log.txt archive.gtf --chunk-size 256MB\n  \
-          {} -v archive.gtf",
+          {} -c data.csv archive.cast --mode 7zip\n  \
+          {} -c large_log.txt archive.cast --chunk-size 256MB\n  \
+          {} -v archive.cast",
         env!("CARGO_PKG_VERSION"),
         exe_name, exe_name, exe_name, exe_name
     );
