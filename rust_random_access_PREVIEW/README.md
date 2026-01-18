@@ -58,8 +58,8 @@ When you request a specific row range (e.g., `--rows 25000-26000`), the decompre
 *Based on initial, non-exhaustive tests performed on a subset of CSV and Log datasets (OpenSSH, PostgreSQL, HDFS, etc.) using the **System Mode (External 7-Zip backend)**, we observed the following trends compared to the standard "Standard" CAST implementation:*
 
 * **Compression Ratio:** Minimal impact. Most datasets show a **0% to 7% size increase**. Highly dense/massive logs (e.g., HDFS) may see up to ~13% increase due to independent dictionary resets.
-* **Compression Speed:** **Variable Overhead.** While some datasets show negligible difference (or even slight speedups), others exhibit a **15% to 40% increase in compression time**. This is due to the computational cost of managing independent dictionary contexts and repeatedly flushing the stream buffers.
-* **Decompression Speed (Full File):** TO BE RECALCULATED AGAIN AFTER INCLUDING THE SAME OPTIMIZED DECOMPRESSION ADDED TO THE STANDARD VERSION.
+* **Compression Speed:** **Variable Overhead.** While some datasets show negligible difference, others exhibit a **15% to 40% increase in compression time**. This is due to the computational cost of managing independent dictionary contexts and repeatedly flushing the stream buffers.
+* **Decompression Speed (Full File):** **Benchmarks Pending Integration.** We are currently porting the high-performance decompression pipeline (from the Standard Engine) to this experimental branch. Formal benchmarks will be recalculated and published immediately upon completion of this integration.
 * **Random Access:** **O(1) complexity**. Seeking and extracting a small range is instantaneous (**< 0.5s**), regardless of total file size (GBs or TBs).
 
 ### Visual Benchmarks
@@ -73,11 +73,12 @@ This chart visualizes the "cost" of indexing. As shown, the size increase is gen
 ![Compression Benchmarks](benchmarks/compression_benchmarks.png)
 
 #### 2. Full Decompression Speed Comparison
-This chart compares the time required to decompress the **entire file**. 
 
-TO BE RECALCULATED AGAIN AFTER INCLUDING THE SAME OPTIMIZED DECOMPRESSION ADDED TO THE STANDARD VERSION.
+> **🚧 Update in Progress:**
+> The full-file decompression benchmarks are currently **paused**.
+> We are actively merging the optimized **Streaming I/O & Pipe Architecture** from the main branch into this prototype. New performance charts will be generated and uploaded as soon as the porting process is finalized.
 
-> **⚡ Important:** The chart above refers to *Full Decompression*. If you use the `--rows` parameter to extract specific ranges, **the operation is near-instantaneous** regardless of the file size, as it only processes the relevant chunk.
+> **⚡ Important:** Regardless of full-file speed, if you use the `--rows` parameter to extract specific ranges, **the operation is near-instantaneous** regardless of the file size, as it only processes the relevant chunk.
 
 ---
 
