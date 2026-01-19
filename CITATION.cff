@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Olivari"
+  given-names: "Andrea"
+title: "CAST: Columnar Agnostic Structural Transformation"
+version: 1.0.0
+date-released: 2026-01-17
+url: "https://github.com/AndreaLVR/CAST"
+abstract: "A Schema-less Structural Preprocessing Algorithm for Improving General-Purpose Compression on Arbitrary Structured and Semi-structured text streams."
+preferred-citation:
+  type: generic
+  authors:
+  - family-names: "Olivari"
+    given-names: "Andrea"
+  title: "CAST: A Schema-less Structural Preprocessing Algorithm for Improving General-Purpose Compression on Arbitrary Structured and Semi-structured text streams."
+  year: 2026

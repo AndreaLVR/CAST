@@ -1,0 +1,22 @@
+[package]
+name = "cast_ra_preview"
+version = "0.2.0-beta"
+edition = "2021"
+authors = ["Andrea Olivari"]
+
+[lib]
+name = "cast"
+path = "src/lib.rs"
+
+[dependencies]
+crc32fast = "1.3"
+num-format = "0.4"
+num_cpus = "1.16"
+xz2 = { version = "0.1", features = ["static"] }
+
+brotli = "8.0"
+zstd = { version = "0.13", features = ["zstdmt"] }
+flate2 = "1.0"
+
+[build-dependencies]
+vcpkg = "0.2"
