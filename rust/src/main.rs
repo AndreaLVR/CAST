@@ -246,11 +246,12 @@ fn print_usage(exe_name: &str) {
           -v, --verify       (During compression) Run an immediate integrity check\n  \
           -h, --help         Show this help message\n\n\
         Examples:\n  \
-          {} -c data.csv archive.cast --mode 7zip\n  \
-          {} -c large_log.txt archive.cast --chunk-size 256MB\n  \
+          {} -c data.csv archive.cast --mode 7zip -v\n  \
+          {} -c large_log.log archive.cast --chunk-size 256MB -v\n  \
+          {} -d archive.cast restored.log\n  \
           {} -v archive.cast",
         env!("CARGO_PKG_VERSION"),
-        exe_name, exe_name, exe_name, exe_name
+        exe_name, exe_name, exe_name, exe_name, exe_name
     );
 }
 
