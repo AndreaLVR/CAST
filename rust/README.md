@@ -1,6 +1,6 @@
 # CAST: Official Standard Rust Implementation 
 
-> ⚠️ **Disclaimer: Proof of Concept & Performance Focus**
+> ⚠️ **Disclaimer: Research-Grade Implementation & Performance Focus**
 >
 > This is an optimized reference implementation designed to demonstrate the full potential of the CAST algorithm. While it delivers production-grade performance and stability (especially in 7-Zip mode), it is a novel technology. Unlike legacy tools (gzip, xz) that have undergone decades of global field-testing, this tool is strictly for experimental use. Use it for archiving and benchmarking, but maintain backups for critical data.
 > 
