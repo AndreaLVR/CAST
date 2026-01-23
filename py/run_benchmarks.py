@@ -18,7 +18,7 @@ except ImportError:
 
 # Import CAST classes
 try:
-    from cast import CASTCompressor, CASTDecompressor
+    from cast import WarehouseForeman, WarehouseUnloader
     from cast_lzma import (
         RuntimeLzmaCompressor,
         RuntimeLzmaDecompressor,
@@ -292,7 +292,7 @@ def main() -> None:
 
                     # Instantiate backend per chunk (Runtime Wrapper)
                     backend = RuntimeLzmaCompressor(backend_type_str, DICT_SIZE)
-                    compressor = CASTCompressor(backend)
+                    compressor = WarehouseForeman(backend)
 
                     res = compressor.compress(chunk)
 
@@ -318,7 +318,7 @@ def main() -> None:
             else:
                 # SOLID PROCESSING
                 backend = RuntimeLzmaCompressor(backend_type_str, DICT_SIZE)
-                compressor = CASTCompressor(backend)
+                compressor = WarehouseForeman(backend)
 
                 res = compressor.compress(original_data)
 
@@ -412,7 +412,7 @@ def main() -> None:
 
                         # Decompress using same backend logic as compression
                         backend = RuntimeLzmaDecompressor(backend_type_str)
-                        dec = CASTDecompressor(backend)
+                        dec = WarehouseUnloader(backend)
 
                         restored = dec.decompress(
                             body[:lr],

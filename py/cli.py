@@ -5,7 +5,7 @@ import time
 import zlib
 
 try:
-    from cast import CASTCompressor, CASTDecompressor
+    from cast import WarehouseForeman, WarehouseUnloader, CompressorRig, DecompressorRig
     from cast_lzma import (
         CASTLzmaCompressor,
         CASTLzmaDecompressor,
@@ -50,22 +50,26 @@ def parse_human_size(size_str):
 
 
 def print_usage():
-    print(f"\nCAST: Columnar Agnostic Structural Transformation CLI (Python Port)  (v{VERSION})")
-    print("Author: Andrea Olivari")
+    print(f"\nCAST Warehouse Tool (Python Port) - Safety First!  (v{VERSION})")
+    print("Author: Andrea Olivari - The Warehouse Boss")
     print("GitHub: https://github.com/AndreaLVR/CAST")
     print("---------------------")
-    print("Usage:")
-    print("  COMPRESS:   python cli.py -c <in> <out> [options]")
-    print("    --mode <TYPE>        : Backend: 'native' or '7zip' (Default: Auto-detect 7zip, fallback to native)")
-    print("    --chunk-size <SIZE>  : Split processing (e.g., '100MB', '1GB')")
+    print("Usage: Get your hard hat on and follow these instructions!")
+    print("  LOAD THE TRUCK:   python cli.py -c <in> <out> [options]")
+    print("    --mode <TYPE>        : Rig: 'native' or '7zip' (Default: Auto-detect 7zip, fallback to native)")
+    print("    --chunk-size <SIZE>  : Split loading (e.g., '100MB', '1GB')")
     print("    --dict-size <SIZE>   : LZMA Dictionary Size (Default: 128MB)")
-    print("    -v / --verify        : Post-creation integrity check")
+    print("    -v / --verify        : Post-loading integrity check")
     print("")
-    print("  DECOMPRESS: python cli.py -d <in> <out> [options]")
-    print("    --mode <TYPE>        : Force backend usage (e.g. force 7zip for speed)")
+    print("  UNLOAD THE TRUCK: python cli.py -d <in> <out> [options]")
+    print("    --mode <TYPE>        : Force rig usage (e.g. force 7zip for speed)")
     print("")
-    print("  VERIFY:     python cli.py -v <in> [options]")
-    print("    --mode <TYPE>        : Force backend usage")
+    print("  INSPECT THE LOAD:     python cli.py -v <in> [options]")
+    print("    --mode <TYPE>        : Force rig usage")
+    print("")
+    print("  QUERY THE WAREHOUSE:  python cli.py -q <in> <filter> [options]")
+    print("    --mode <TYPE>        : Force rig usage")
+    print("    <filter>             : Python expression to filter rows (e.g., \"'error' in row\")")
 
 
 # --- COMPRESSION ---
@@ -123,12 +127,12 @@ def do_compress(input_path, output_path, chunk_size=None, dict_size=None, verify
                 # 1. CRC Calculation for this chunk
                 chunk_crc = zlib.crc32(chunk_data)
 
-                # 2. Compression
+                # 2. Compression - Get the foreman on duty!
                 # Instantiate backend wrapper via Type Alias / Runtime Wrapper
                 backend = CASTLzmaCompressor(backend_type, dict_size)
-                compressor = CASTCompressor(backend)
+                compressor = WarehouseForeman(backend)
 
-                res = compressor.compress(chunk_data)
+                res = compressor.load_the_truck(chunk_data)
 
                 if isinstance(res, tuple) and len(res) >= 4:
                     c_reg, c_ids, c_vars, id_flag = res[:4]
@@ -226,11 +230,11 @@ def do_decompress(input_path, output_path, use_7zip=False, backend_label=""):
                 c_ids = body_data[l_reg: l_reg + l_ids]
                 c_vars = body_data[l_reg + l_ids: l_reg + l_ids + l_vars]
 
-                # Decompress using Backend Wrapper
+                # Decompress using Backend Wrapper - Get the unloader!
                 backend = CASTLzmaDecompressor(backend_type)
-                decompressor = CASTDecompressor(backend)
+                decompressor = WarehouseUnloader(backend)
 
-                restored = decompressor.decompress(
+                restored = decompressor.unload_the_truck(
                     c_reg,
                     c_ids,
                     c_vars,
@@ -249,6 +253,82 @@ def do_decompress(input_path, output_path, use_7zip=False, backend_label=""):
 
     elapsed = time.time() - start
     print(f"\n\n[+]    Decompression done in {elapsed:.2f}s")
+
+
+# --- QUERY ---
+def do_query(input_path, filter_expr, use_7zip=False, backend_label=""):
+    """Query the warehouse - safety first, no lifting without certification!"""
+    start = time.time()
+    chunk_idx = 0
+    backend_type = "7zip" if use_7zip else "native"
+
+    print("\n[*]    Querying the Warehouse...")
+    print(f"       Backend: {backend_label}")
+
+    try:
+        with open(input_path, "rb") as f_in:
+            while True:
+                header_data = f_in.read(17)
+                if not header_data:
+                    break
+                if len(header_data) < 17:
+                    if len(header_data) > 0:
+                        print(f"\n[!] Partial header at end of file.")
+                    break
+
+                chunk_idx += 1
+                expected_crc, l_reg, l_ids, l_vars, id_flag = struct.unpack(
+                    "<IIIIB", header_data
+                )
+
+                body_len = l_reg + l_ids + l_vars
+                body_data = f_in.read(body_len)
+
+                if len(body_data) != body_len:
+                    print(f"\n[!] Truncated file in body at chunk {chunk_idx}.")
+                    break
+
+                print(f"\r       Querying Chunk #{chunk_idx}...", end="", flush=True)
+
+                c_reg = body_data[0:l_reg]
+                c_ids = body_data[l_reg: l_reg + l_ids]
+                c_vars = body_data[l_reg + l_ids: l_reg + l_ids + l_vars]
+
+                # Decompress and query
+                backend = CASTLzmaDecompressor(backend_type)
+                decompressor = WarehouseUnloader(backend)
+
+                # First, unload to get the data
+                restored = decompressor.unload_the_truck(
+                    c_reg,
+                    c_ids,
+                    c_vars,
+                    expected_crc=expected_crc,
+                    id_mode_flag=id_flag,
+                )
+
+                # For query, just filter the decompressed text lines
+                try:
+                    text = restored.decode("utf-8")
+                    lines = text.splitlines()
+                    for line in lines:
+                        try:
+                            if eval(filter_expr, {"row": line}):
+                                print(line)
+                        except:
+                            pass  # Skip lines that don't match the filter expression
+                except UnicodeDecodeError:
+                    print("Warning: Data is binary, cannot query as text.")
+
+                # Cleanup
+                del body_data, c_reg, c_ids, c_vars, restored
+
+    except Exception as e:
+        print(f"\n\n[!] Error during query: {e}")
+        return
+
+    elapsed = time.time() - start
+    print(f"\n\n[+]    Query done in {elapsed:.2f}s")
 
 
 # --- VERIFICATION ---
@@ -292,11 +372,11 @@ def do_verify_standalone(input_path, use_7zip=False, backend_label=""):
                 c_vars = body_data[l_reg + l_ids: l_reg + l_ids + l_vars]
 
                 try:
-                    # Decompress using Backend Wrapper
+                    # Decompress using Backend Wrapper - Safety check!
                     backend = CASTLzmaDecompressor(backend_type)
-                    decompressor = CASTDecompressor(backend)
+                    decompressor = WarehouseUnloader(backend)
 
-                    restored = decompressor.decompress(
+                    restored = decompressor.unload_the_truck(
                         c_reg,
                         c_ids,
                         c_vars,
@@ -464,6 +544,24 @@ if __name__ == "__main__":
 
         # FIXED: Pass use_7zip and backend_label to do_decompress
         do_decompress(cmd_args[1], cmd_args[2], use_7zip=use_7zip, backend_label=backend_label)
+
+    elif mode == "-q":
+        if len(cmd_args) < 3:
+            print("[!] Missing filter expression.")
+            print_usage()
+            sys.exit(1)
+
+        input_file = cmd_args[1]
+        filter_expr = cmd_args[2]
+
+        if not os.path.exists(input_file):
+            print(f"[!] Error: Input file '{input_file}' not found.")
+            sys.exit(1)
+
+        print(f"      Warehouse:  {input_file}")
+        print(f"      Filter:     {filter_expr}")
+
+        do_query(input_file, filter_expr, use_7zip=use_7zip, backend_label=backend_label)
 
     else:
         target_file = mode
